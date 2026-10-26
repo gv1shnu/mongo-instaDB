@@ -126,9 +126,11 @@
     try { return new RegExp(pattern, flags); } catch (e) { throw new QueryError("invalid regular expression: " + pattern); }
   }
 
+  // explicit $eq / $ne compare a regex as a value; only { field: /re/ } and $in pattern-match
+  const eqLiteral = (v, a) => (a instanceof RegExp ? (Array.isArray(v) ? v : [v]).some((e) => deepEqual(e, a)) : eqMatch(v, a));
   const FIELD_OPS = {
-    $eq: (v, a) => eqMatch(v, a),
-    $ne: (v, a) => !eqMatch(v, a),
+    $eq: (v, a) => eqLiteral(v, a),
+    $ne: (v, a) => !eqLiteral(v, a),
     $gt: (v, a) => cmpMatch(v, a, (c) => c > 0),
     $gte: (v, a) => cmpMatch(v, a, (c) => c >= 0),
     $lt: (v, a) => cmpMatch(v, a, (c) => c < 0),
@@ -250,6 +252,13 @@
     if (cur !== undefined && typeof cur !== "number") throw new QueryError(`Cannot apply ${op} to a non-numeric value (${path})`);
   };
 
+  const dollarKey = (v) => {
+    if (Array.isArray(v)) { for (const x of v) { const k = dollarKey(x); if (k) return k; } return null; }
+    if (!isPlainObject(v)) return null;
+    for (const k of Object.keys(v)) { if (k.startsWith("$")) return k; const d = dollarKey(v[k]); if (d) return d; }
+    return null;
+  };
+
   function applyUpdate(doc, update, ctx) {
     if (!isPlainObject(update) || !Object.keys(update).length)
       throw new QueryError("update must be an object of update operators, e.g. { $set: { ... } }");
@@ -262,7 +271,11 @@
         const path = resolvePositional(rawPath, doc, ctx.filter);
         const arg = spec[rawPath];
         const cur = getPath(doc, path);
-        if (op === "$set") setPath(doc, path, clone(arg));
+        if (op === "$set") {
+          const bad = dollarKey(arg);
+          if (bad) throw new QueryError(`The dollar ($) prefixed field '${bad}' in '${path}.${bad}' is not allowed. Operators like ${bad} can't go inside $set.`);
+          setPath(doc, path, clone(arg));
+        }
         else if (op === "$unset") unsetPath(doc, path);
         else if (op === "$inc" || op === "$mul") {
           needNumber(arg, cur, path, op);

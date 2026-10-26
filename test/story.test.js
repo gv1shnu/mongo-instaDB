@@ -52,5 +52,35 @@ expect("deleteOne: deleteMany fails", same("deleteOne()", 'db.posts.deleteMany({
 expect("replaceOne: fields in another order pass", same("replaceOne()", 'db.users.replaceOne({ username: "rohan_travels" }, { accountType: "business", verified: false, followers: 7800, city: "Kolkata", fullName: "Rohan Das Travels", username: "rohan_travels" })'), true);
 expect("replaceOne: updateOne + $set keeps interests, fails", same("replaceOne()", 'db.users.updateOne({ username: "rohan_travels" }, { $set: { fullName: "Rohan Das Travels", accountType: "business" } })'), false);
 expect("deleteMany: $lte fails (Meera's reel at 100)", same("deleteMany()", "db.posts.deleteMany({ likes: { $lte: 100 } })"), false);
+// Every option runs. A wrong option must change something the student can see
+// (a different result, or an error), unless it carries a note explaining why it's still wrong.
+const writes = STORY.steps.filter((s) => s.mode === "write").length;
+expect(`about 6 write steps (${writes})`, writes >= 5 && writes <= 7, true);
+STORY.steps.forEach((st, i) => {
+  const now = stepNow(st), want = run(canon(st), states[i], { now });
+  const check = (label, code, note) => {
+    const r = run(code, states[i], { now });
+    const same = r.ok && fingerprint(r, true) === fingerprint(want, true);
+    const ok = !same || !!note;
+    if (!ok) fail++;
+    if (!ok || process.argv.includes("-v")) console.log((ok ? "ok  " : "FAIL") + `  step ${i + 1} ${label}: ${r.ok ? (same ? "same result" : "different result") : r.error}${note ? " (has note)" : ""}`);
+  };
+  if (st.mode === "choice" || st.mode === "bug") {
+    if (st.options.filter((o) => o.ok).length !== 1) { fail++; console.log(`FAIL  step ${i + 1} needs exactly one right option`); }
+    st.options.forEach((o, k) => { if (!o.ok) { check("option " + "ABCD"[k], o.code); if (!o.why) { fail++; console.log(`FAIL  step ${i + 1} option ${"ABCD"[k]} has no why`); } } });
+  }
+  if (st.mode === "bug") { const r = run(st.broken, states[i], { now }); if (r.ok && fingerprint(r, true) === fingerprint(want, true)) { fail++; console.log(`FAIL  step ${i + 1} broken query works`); } }
+  if (st.mode === "predict") {
+    if (st.options.filter((o) => o.ok).length !== 1) { fail++; console.log(`FAIL  step ${i + 1} needs exactly one right option`); }
+    st.options.forEach((o, k) => { if (!o.ok && !o.why) { fail++; console.log(`FAIL  step ${i + 1} option ${"ABCD"[k]} has no why`); } });
+  }
+  if (st.mode === "pick") {
+    const blanks = st.code.filter((p) => typeof p !== "string"), answers = blanks.map((b) => b.b);
+    blanks.forEach((b, k) => {
+      if (globalThis.chipsFor(st, b).length !== b.opts.length + 1 || b.opts.includes(b.b)) { fail++; console.log(`FAIL  step ${i + 1} blank ${k + 1} chips`); }
+      b.opts.forEach((d) => check(`blank ${k + 1} = ${d}`, globalThis.assemble(st.code, answers.map((a, j) => (j === k ? d : a))), b.why[d]));
+    });
+  }
+});
 console.log(fail ? fail + " PROBLEMS" : "STORY OK");
 process.exit(fail ? 1 : 0);

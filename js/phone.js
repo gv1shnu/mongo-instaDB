@@ -86,7 +86,7 @@
     const state = after || before;
     if (idle) {
       const feed = state.posts.slice().sort((a, b) => b.createdAt - a.createdAt).slice(0, 4);
-      return { tab: "home", title: "instaDB", body: `<div class="ph-banner">Waiting for your query… press <b>Run ▶</b></div>` + feed.map((p) => feedCard(p, state)).join("") };
+      return { tab: "home", title: "instaDB", body: `<div class="ph-banner">Waiting for your answer… then watch this screen</div>` + feed.map((p) => feedCard(p, state)).join("") };
     }
     if (ctx.finale) {
       const feed = state.posts.slice().sort((a, b) => b.createdAt - a.createdAt);

@@ -1,12 +1,18 @@
+// Slide-deck player: slide 0 is the intro, slides 1..N are the story steps,
+// slide N+1 is the finale. The phone beside the slide always shows the story.
 (function () {
-  const E = window.InstaEngine, STORY = window.STORY, SEED = window.SEED, assemble = window.assemble, canonical = window.canonical, stepNow = window.stepNow;
-  const steps = STORY.steps;
+  const E = window.InstaEngine, STORY = window.STORY, SEED = window.SEED;
+  const { assemble, canonical, stepNow, chipsFor } = window;
+  const steps = STORY.steps, N = steps.length, LAST = N + 1;
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const blanksOf = (st) => (st.code || []).filter((p) => typeof p !== "string").map((p) => p.b);
-  const norm = (s) => String(s).trim().replace(/^(["'`])(.*)\1$/, "$2").trim();
-  const isWrite = (st) => st.mode === "write";
+  const blanksOf = (st) => st.code.filter((p) => typeof p !== "string");
   const ordered = (st) => canonical(st).includes(".sort(");
+  const LETTERS = "ABCD";
+  const MODES = {
+    write: ["✍️", "write the query"], pick: ["🧩", "pick the operator"], choice: ["☑️", "choose the query"],
+    bug: ["🐞", "fix the bug"], predict: ["🔮", "predict"],
+  };
 
   // database state before each step, following the canonical story
   const states = [SEED];
@@ -14,118 +20,66 @@
     const r = E.run(canonical(st), states[i], { now: stepNow(st) });
     states.push(r.ok ? r.state : states[i]);
   });
+  const runAt = (code, i) => E.run(code, states[i], { now: stepNow(steps[i]) });
 
-  const KEY = "instadb-story-v3";
-  let progress = { step: 0, revealed: [] };
-  try { const saved = JSON.parse(localStorage.getItem(KEY)); if (saved && Number.isInteger(saved.step) && saved.step <= steps.length) progress = saved; } catch (e) {}
+  const KEY = "instadb-deck-v1";
+  let progress = { at: 0, solved: [], tried: [], revealed: [] };
+  try {
+    const saved = JSON.parse(localStorage.getItem(KEY));
+    if (saved && Number.isInteger(saved.at) && Array.isArray(saved.solved)) progress = Object.assign(progress, saved);
+  } catch (e) {}
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(progress)); } catch (e) {} };
+  const mark = (list, i) => { if (!progress[list].includes(i)) progress[list].push(i); };
+  const isSolved = (i) => progress.solved.includes(i);
+
+  // per-slide state that isn't saved: picks for blanks, the active blank
+  let ui = {};
+
+  // ---------- navigation ----------
+  const slideFromHash = () => { const n = parseInt(location.hash.replace(/^#\/?/, ""), 10); return Number.isInteger(n) ? n : null; };
+  const setHash = (n) => history.replaceState(null, "", location.pathname + location.search + "#" + n);
+  const canGoNext = () => progress.at === 0 || progress.at > N || isSolved(progress.at - 1) || progress.tried.includes(progress.at - 1);
+  function go(slide) {
+    slide = Math.max(0, Math.min(LAST, slide));
+    progress.at = slide; save();
+    if (slideFromHash() !== slide) setHash(slide);
+    ui = {};
+    render();
+    $("stage").scrollIntoView({ block: "start", behavior: "smooth" });
+  }
+  const next = () => { if (canGoNext()) go(progress.at + 1); };
+  const prev = () => go(progress.at - 1);
 
   // ---------- rendering ----------
-  function blankCodeHTML(st, mode) {
-    let bi = 0;
-    return st.code.map((p) => {
-      if (typeof p === "string") return esc(p);
-      const i = bi++;
-      if (mode === "done") return `<span class="filled">${esc(p.b)}</span>`;
-      return `<input class="blank" data-i="${i}" size="5" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="blank ${i + 1}">`;
-    }).join("");
-  }
-  const doneCodeHTML = (st) => (isWrite(st) ? `<span class="filled">${esc(st.answer)}</span>` : blankCodeHTML(st, "done"));
   const chapterOf = (st) => STORY.chapters.find((c) => c.id === st.chapter);
-  const modeTag = (st) => (isWrite(st) ? '<span class="tag mode-write">✍️ write the query</span>' : '<span class="tag mode-blank">🧩 fill the operator</span>');
 
-  function renderIntro() { $("intro").innerHTML = `<h2>${esc(STORY.title)}</h2><p>${STORY.intro}</p>`; }
-
-  function renderTimeline() {
-    const out = [];
-    let lastCh = null;
-    for (let i = 0; i < Math.min(progress.step, steps.length); i++) {
-      const st = steps[i];
-      if (st.chapter !== lastCh) { out.push(`<h3 class="chapter">${esc(chapterOf(st).title)}</h3>`); lastCh = st.chapter; }
-      const rev = progress.revealed.includes(i);
-      out.push(`<article class="done-step">
-        <div class="step-meta"><span class="num">${i + 1}</span><span class="tag">${esc(st.op)}</span>${rev ? '<span class="rev">answer shown</span>' : ""}</div>
-        <div class="before">${st.before}</div>
-        <div class="code small-code">${doneCodeHTML(st)}</div>
-        <p class="after">${st.after}</p>
-        ${st.trapNote ? `<p class="trap">${st.trapNote}</p>` : ""}
-      </article>`);
-    }
-    $("timeline").innerHTML = out.join("");
-    return lastCh;
+  function render() {
+    const s = progress.at;
+    if (s === 0) renderIntro();
+    else if (s > N) renderFinale();
+    else renderStep(s - 1);
+    renderNav();
+    renderProgress();
+    renderData();
   }
 
-  function renderCurrent(lastCh) {
-    const i = progress.step;
-    const cur = $("current");
-    if (i >= steps.length) {
-      const end = states[steps.length];
-      cur.innerHTML = `<div class="card finale">
-        <h2>That's the day on instaDB 🌙</h2>
-        <p>You created a user and her posts, read profiles, filtered with comparison, logical, regex and array operators, paged through a sorted feed, changed fields and arrays with update operators, replaced a whole document and cleaned up. instaDB ends the day with <b>${end.users.length} users</b> and <b>${end.posts.length} posts</b>.</p>
-        <p class="muted">${progress.revealed.length ? `You used "Show answer" on ${progress.revealed.length} step${progress.revealed.length > 1 ? "s" : ""}. Restart the day and try those again without it.` : "You solved every step without revealing an answer."}</p>
-        <button class="btn primary" id="again">Restart the day</button>
-      </div>`;
-      $("again").onclick = restart;
-      phone({ finale: true, before: end, spec: { time: "0:05" } });
-      return;
-    }
-    const st = steps[i];
-    const chHead = st.chapter !== lastCh ? `<h3 class="chapter">${esc(chapterOf(st).title)}</h3>` : "";
-    const editor = isWrite(st)
-      ? `<textarea class="editor" id="editor" rows="3" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Your query" placeholder="Type the whole query, e.g. db.collection.method( ... )"></textarea>`
-      : `<div class="code" id="code">${blankCodeHTML(st, "edit")}</div>`;
-    cur.innerHTML = `${chHead}
-      <div class="card now">
-        <div class="step-meta"><span class="num">${i + 1}</span><span class="tag">Step ${i + 1} of ${steps.length}</span>${modeTag(st)}${st.trap ? '<span class="tag warn">⚠️ predict first</span>' : ""}</div>
-        <div class="before big">${st.before}</div>
-        ${editor}
-        <div class="actions">
-          <button class="btn primary" id="run">Run ▶</button>
-          <button class="btn" id="hint">Hint</button>
-          <button class="btn" id="reveal">Show answer</button>
-        </div>
-        <p class="kbd-tip">${isWrite(st) ? "Press <kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>Enter</kbd> to run. Watch the phone." : "Fill the operator, then press <kbd>Enter</kbd> or Run. Watch the phone."}</p>
-        <div class="feedback" id="feedback" hidden></div>
-      </div>`;
-    if (isWrite(st)) {
-      const ed = $("editor");
-      const grow = () => { ed.style.height = "auto"; ed.style.height = ed.scrollHeight + 2 + "px"; };
-      ed.addEventListener("input", () => { grow(); ed.classList.remove("bad", "ok"); });
-      ed.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); check(); }
-        else if (e.key === "Tab" && !e.shiftKey) { e.preventDefault(); ed.setRangeText("  ", ed.selectionStart, ed.selectionEnd, "end"); }
-      });
-      if (document.activeElement === document.body) ed.focus({ preventScroll: true });
-    } else {
-      const inputs = [...cur.querySelectorAll(".blank")];
-      inputs.forEach((inp) => {
-        inp.addEventListener("input", () => { inp.size = Math.max(5, inp.value.length + 1); inp.classList.remove("bad", "ok"); });
-        inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); check(); } });
-      });
-      if (inputs[0] && document.activeElement === document.body) inputs[0].focus({ preventScroll: true });
-    }
-    $("run").onclick = check;
-    $("hint").onclick = () => feedback("info", "Hint", esc(st.hint));
-    $("reveal").onclick = reveal;
-    phone({ idle: true, before: states[i], spec: st.screen });
+  function renderNav() {
+    const s = progress.at;
+    $("prev").disabled = s === 0;
+    $("next").disabled = s > N || !canGoNext();
+    $("next").textContent = s === 0 ? "Start →" : s === N ? "Finish →" : "Next →";
+    $("next").classList.toggle("ready", s > 0 && s <= N && isSolved(s - 1));
+    $("nav-note").textContent = s > 0 && s <= N && !canGoNext() ? "Answer this slide to unlock Next. A wrong try counts." : "";
+    $("jump").value = String(s);
   }
-
-  function feedback(kind, head, body, extra) {
-    const f = $("feedback");
-    f.hidden = false;
-    f.className = "feedback " + kind;
-    f.innerHTML = `<div class="head">${head}</div><div>${body}</div>${extra || ""}`;
-  }
-
   function renderProgress() {
-    const n = Math.min(progress.step, steps.length);
-    $("bar-fill").style.width = (n / steps.length) * 100 + "%";
-    $("progress-label").textContent = n >= steps.length ? "Day complete" : `Step ${n + 1} of ${steps.length} · ${chapterOf(steps[n]).title.split(":")[0]}`;
+    const s = progress.at;
+    $("bar-fill").style.width = (progress.solved.length / N) * 100 + "%";
+    $("progress-label").textContent = s === 0 ? `${progress.solved.length} of ${N} solved`
+      : s > N ? "Day complete" : `Slide ${s} of ${N} · ${chapterOf(steps[s - 1]).title.split(":")[0]}`;
   }
-
   function renderData() {
-    const st = states[Math.min(progress.step, steps.length)];
+    const st = states[Math.min(Math.max(progress.at - 1, 0), N)];
     $("data-count").textContent = `(${st.users.length} users · ${st.posts.length} posts)`;
     const table = (id, name, docs) => {
       const cols = [...new Set(docs.flatMap((d) => Object.keys(d)))];
@@ -140,19 +94,70 @@
     table("posts-table", "posts", st.posts);
   }
 
-  function render() {
-    renderIntro();
-    const lastCh = renderTimeline();
-    renderCurrent(lastCh);
-    renderProgress();
-    renderData();
+  function renderIntro() {
+    const counts = {};
+    steps.forEach((st) => (counts[st.mode] = (counts[st.mode] || 0) + 1));
+    $("slide").innerHTML = `<div class="eyebrow">MongoDB practice · Lectures 2 and 3</div>
+      <h2 class="slide-title">${esc(STORY.title)}</h2>
+      <p class="lead">${STORY.intro}</p>
+      <div class="kinds">${Object.keys(MODES).filter((m) => counts[m]).map((m) => `<span class="tag mode-${m}">${MODES[m][0]} ${MODES[m][1]} · ${counts[m]}</span>`).join("")}</div>
+      <ol class="agenda">${STORY.chapters.map((c) => {
+        const first = steps.findIndex((s) => s.chapter === c.id);
+        return `<li><a href="#${first + 1}">${esc(c.title)}</a></li>`;
+      }).join("")}</ol>
+      <p class="muted small">Use <kbd>←</kbd> <kbd>→</kbd> to move between slides and <kbd>1</kbd>–<kbd>4</kbd> to pick an option.</p>`;
+    resetTerminal();
+    phone({ idle: true, before: SEED, spec: { time: "6:59" } });
+  }
+
+  function renderFinale() {
+    const end = states[N];
+    const rev = progress.revealed.length;
+    $("slide").innerHTML = `<div class="eyebrow">Midnight</div>
+      <h2 class="slide-title">That's the day on instaDB 🌙</h2>
+      <p class="lead">You created a user and her posts, read profiles, filtered with comparison, logical, regex and array operators, paged through a sorted feed, changed fields and arrays with update operators, replaced a whole document and cleaned up. instaDB ends the day with <b>${end.users.length} users</b> and <b>${end.posts.length} posts</b>.</p>
+      <p class="muted">${progress.solved.length} of ${N} slides solved. ${rev ? `You used "Show answer" on ${rev} slide${rev > 1 ? "s" : ""}: ${progress.revealed.slice().sort((a, b) => a - b).map((i) => `<a href="#${i + 1}">${i + 1}</a>`).join(", ")}. Try those again without it.` : "You didn't reveal a single answer."}</p>
+      <div class="actions"><button class="btn primary" id="again">Restart the day</button></div>`;
+    $("again").onclick = restart;
+    resetTerminal();
+    phone({ finale: true, before: end, spec: { time: "0:05" } });
+  }
+
+  function renderStep(i) {
+    const st = steps[i], [icon, label] = MODES[st.mode];
+    $("slide").innerHTML = `<div class="eyebrow">${esc(chapterOf(st).title)}</div>
+      <div class="step-meta"><span class="num">${i + 1}</span><span class="tag mode-${st.mode}">${icon} ${label}</span><span class="tag">${esc(st.op)}</span>${st.trap ? '<span class="tag warn">⚠️ predict first</span>' : ""}${progress.revealed.includes(i) ? '<span class="rev">answer shown</span>' : ""}</div>
+      <div class="before big">${st.before}</div>
+      <div id="widget"></div>
+      <div class="actions" id="actions">
+        ${st.mode === "write" ? '<button class="btn primary" id="run">Run ▶</button>' : ""}
+        <button class="btn" id="hint">Hint</button>
+        <button class="btn" id="reveal">Show answer</button>
+      </div>
+      <div class="feedback" id="feedback" hidden></div>`;
+    $("hint").onclick = () => feedback("info", "Hint", esc(st.hint));
+    $("reveal").onclick = () => reveal(i);
+    WIDGETS[st.mode].draw(i);
+    if (isSolved(i)) showSolved(i);
+    else { resetTerminal(); phone({ idle: true, before: states[i], spec: st.screen }); }
+  }
+
+  function feedback(kind, head, body, extra) {
+    const f = $("feedback");
+    f.hidden = false;
+    f.className = "feedback " + kind;
+    f.innerHTML = `<div class="head">${head}</div><div>${body}</div>${extra || ""}`;
   }
 
   // ---------- phone + terminal ----------
   const phone = (ctx) => { if (window.Phone) window.Phone.render($("phone"), ctx); };
-
+  const resetTerminal = () => { $("output").innerHTML = 'instaDB&gt; <span class="muted">// every query you run or pick shows its result here</span>'; };
+  function showRun(i, code, res) {
+    terminal(code.trim(), res, states[i]);
+    phone({ res, before: states[i], after: res.ok ? res.state : null, spec: steps[i].screen });
+    if (window.matchMedia("(max-width: 940px)").matches) $("phone-col").classList.add("open");
+  }
   function terminal(code, res, before) {
-    const out = $("output");
     let body;
     if (!res.ok) body = `<span class="err">${esc(res.error)}</span>`;
     else {
@@ -166,7 +171,38 @@
         } else body += `\n<span class="muted">// now: ${res.state.users.length} users, ${res.state.posts.length} posts</span>`;
       } else body = esc(E.show(v));
     }
-    out.innerHTML = `instaDB&gt; ${esc(code)}\n${body}`;
+    $("output").innerHTML = `instaDB&gt; ${esc(code)}\n${body}`;
+  }
+  const short = (res) => (res.ok ? E.show(res.value).replace(/\s*\n\s*/g, " ") : res.error);
+
+  // ---------- solving ----------
+  function solve(i) {
+    mark("solved", i); mark("tried", i); save();
+    const st = steps[i];
+    feedback("ok", "Correct ✓", st.after, (st.trapNote ? `<p class="trap">${st.trapNote}</p>` : "") +
+      `<div class="actions"><button class="btn primary" id="continue">${i + 1 < N ? "Next slide →" : "Finish the day →"}</button></div>`);
+    $("continue").onclick = next;
+    WIDGETS[st.mode].lock(i);
+    $("reveal").disabled = true;
+    renderNav(); renderProgress();
+  }
+  function wrong(i, head, body) {
+    mark("tried", i); save();
+    feedback("bad", head, body);
+    renderNav();
+  }
+  function showSolved(i) {
+    const st = steps[i];
+    WIDGETS[st.mode].fill(i);
+    const code = canonical(st);
+    const res = runAt(code, i);
+    showRun(i, code, res);
+    $("phone-col").classList.remove("open");
+    solve(i);
+  }
+  function reveal(i) {
+    mark("revealed", i); mark("tried", i); save();
+    WIDGETS[steps[i].mode].reveal(i);
   }
 
   // Explain how a write-step answer differs from the expected one.
@@ -178,13 +214,13 @@
     if (gk !== wk) return `Your query returned ${names[gk]}, but this step needs ${names[wk]}. Check which method you used.`;
     if (gk === "list") {
       if (g.length !== w.length) return `Your query returned ${g.length} document${g.length === 1 ? "" : "s"}; this step needs ${w.length}.`;
-      return ordered(st) ? "Right number of documents, but not the right ones in the right order. Check the sort direction and how many you skip." : "Right number of documents, but not the right ones. Check your filter.";
+      return ordered(st) ? "Right number of documents, but not the right ones in the right order." : "Right number of documents, but not the right ones. Check your filter.";
     }
     if (gk === "doc") return "You got a single document, but not the one this step asks for. Check your filter.";
     if (gk === "insertOne" || gk === "insertMany") return "The inserted document doesn't match the form. Check every field name, spelling, and value type: numbers without quotes, true/false without quotes, text in quotes.";
     if (gk === "update") {
       if (g.matchedCount !== w.matchedCount) return `Your update matched ${g.matchedCount} document${g.matchedCount === 1 ? "" : "s"}; this step should match ${w.matchedCount}. Check the method (updateOne vs updateMany) and the filter.`;
-      return "Right documents, but they changed differently from what the story asks. Check each update operator and its value. The phone and the terminal show what your update did.";
+      return "Right documents, but they changed differently from what the story asks. Check each operator and its value. The phone and the terminal show what your query did.";
     }
     if (gk === "delete") {
       if (g.deletedCount !== w.deletedCount) return `You deleted ${g.deletedCount} post${g.deletedCount === 1 ? "" : "s"}; this step should delete ${w.deletedCount}. Check the method (deleteOne vs deleteMany) and the filter.`;
@@ -193,76 +229,186 @@
     return "Not the result this step needs.";
   }
 
-  // ---------- actions ----------
-  function check() {
-    const i = progress.step, st = steps[i];
-    let code, right;
-    if (isWrite(st)) {
-      code = $("editor").value;
-      if (!code.trim()) { feedback("info", "Type your query first", "Write the whole command, starting with <code>db.</code>"); return; }
-    } else {
-      const inputs = [...document.querySelectorAll("#current .blank")];
-      const vals = inputs.map((x) => x.value);
-      if (vals.some((v) => !v.trim())) { feedback("info", "Fill every blank first", "Each dashed box needs an operator before the query can run."); return; }
-      code = assemble(st.code, vals);
-      const want = blanksOf(st);
-      right = vals.map((v, k) => norm(v) === norm(want[k]));
-      inputs.forEach((inp, k) => { inp.classList.toggle("ok", right[k]); inp.classList.toggle("bad", !right[k]); });
-    }
-    const res = E.run(code, states[i], { now: stepNow(st) });
-    terminal(code.trim(), res, states[i]);
-    phone({ res, before: states[i], after: res.ok ? res.state : null, spec: st.screen });
+  // ---------- question widgets ----------
+  const optionButtons = (st, render) => `<div class="opts" role="list">${st.options.map((o, k) =>
+    `<button class="opt" data-k="${k}" role="listitem"><span class="opt-key">${LETTERS[k]}</span>${render(o)}</button>`).join("")}</div>`;
+  const lockOptions = (i) => {
+    const okK = steps[i].options.findIndex((o) => o.ok);
+    document.querySelectorAll("#widget .opt").forEach((b) => { b.disabled = true; if (+b.dataset.k === okK) b.classList.add("ok"); });
+  };
 
-    if (isWrite(st)) {
-      const want = E.run(canonical(st), states[i], { now: stepNow(st) });
-      const ok = res.ok && E.fingerprint(res, ordered(st)) === E.fingerprint(want, ordered(st));
-      $("editor").classList.toggle("ok", ok); $("editor").classList.toggle("bad", !ok);
-      if (ok) return advance();
-      if (!res.ok) return feedback("bad", "MongoDB rejected the query", esc(res.error) + "<br><span class='muted'>The error is also in the terminal below.</span>");
-      return feedback("bad", "It ran, but it's not what the story needs", explainDiff(st, res, want));
-    }
-    if (right.every(Boolean) && res.ok) return advance();
-    const want = blanksOf(st);
-    const vals = [...document.querySelectorAll("#current .blank")].map((x) => x.value);
-    const wrongIdx = right.map((r, k) => (r ? -1 : k)).filter((k) => k >= 0);
-    let tip = res.ok ? "The query ran, but it isn't the one this step needs. Compare the phone and the terminal with what the story asks for." : "MongoDB rejected the query. Read the error in the terminal below.";
-    if (wrongIdx.some((k) => norm(want[k]).startsWith("$") && !norm(vals[k]).startsWith("$"))) tip = "Operators always start with <code>$</code>.";
-    feedback("bad", wrongIdx.length === 1 ? "Not quite: one blank is off" : `Not quite: ${wrongIdx.length} blanks are off`, tip);
-  }
+  const WIDGETS = {
+    write: {
+      draw(i) {
+        $("widget").innerHTML = `<textarea class="editor" id="editor" rows="3" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Your query" placeholder="Type the whole query, e.g. db.collection.method( ... )"></textarea>
+          <p class="kbd-tip">Press <kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>Enter</kbd> to run. Watch the phone.</p>`;
+        const ed = $("editor");
+        const grow = () => { ed.style.height = "auto"; ed.style.height = ed.scrollHeight + 2 + "px"; };
+        ed.addEventListener("input", () => { grow(); ed.classList.remove("bad", "ok"); });
+        ed.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); this.check(i); }
+          else if (e.key === "Tab" && !e.shiftKey) { e.preventDefault(); ed.setRangeText("  ", ed.selectionStart, ed.selectionEnd, "end"); }
+        });
+        $("run").onclick = () => this.check(i);
+      },
+      check(i) {
+        const st = steps[i], code = $("editor").value;
+        if (!code.trim()) { feedback("info", "Type your query first", "Write the whole command, starting with <code>db.</code>"); return; }
+        const res = runAt(code, i), want = runAt(canonical(st), i);
+        showRun(i, code, res);
+        const ok = res.ok && E.fingerprint(res, ordered(st)) === E.fingerprint(want, ordered(st));
+        $("editor").classList.toggle("ok", ok); $("editor").classList.toggle("bad", !ok);
+        if (ok) return solve(i);
+        if (!res.ok) return wrong(i, "MongoDB rejected the query", esc(res.error) + "<br><span class='muted'>The error is also in the terminal below.</span>");
+        wrong(i, "It ran, but it's not what the story needs", explainDiff(st, res, want));
+      },
+      fill(i) { const ed = $("editor"); ed.value = canonical(steps[i]); ed.dispatchEvent(new Event("input")); },
+      lock() { $("editor").disabled = true; $("editor").classList.add("ok"); $("run").disabled = true; },
+      reveal(i) {
+        const ed = $("editor"); ed.value = canonical(steps[i]); ed.classList.add("revealed"); ed.dispatchEvent(new Event("input"));
+        feedback("info", "Here's the answer", "Read it, then press <b>Run ▶</b> to see what it does.");
+        renderNav();
+      },
+    },
 
-  function reveal() {
-    const i = progress.step, st = steps[i];
-    if (isWrite(st)) {
-      const ed = $("editor"); ed.value = st.answer; ed.classList.add("revealed"); ed.dispatchEvent(new Event("input"));
-    } else {
-      const want = blanksOf(st);
-      document.querySelectorAll("#current .blank").forEach((inp, k) => { inp.value = want[k]; inp.size = Math.max(5, want[k].length + 1); inp.classList.add("revealed"); });
-    }
-    if (!progress.revealed.includes(i)) progress.revealed.push(i);
-    save();
-    feedback("info", "Here's the answer", "Read it, press <b>Run ▶</b> to see what it does, then continue the story.");
-  }
+    pick: {
+      draw(i) {
+        const st = steps[i], blanks = blanksOf(st);
+        if (!ui.picks) { ui.picks = blanks.map(() => null); ui.active = 0; }
+        let bi = 0;
+        const code = st.code.map((p) => {
+          if (typeof p === "string") return esc(p);
+          const k = bi++, v = ui.picks[k];
+          const state = ui.marks ? (ui.marks[k] ? "ok" : "bad") : "";
+          return `<button class="slot ${v ? "filled" : ""} ${k === ui.active && !ui.locked ? "active" : ""} ${state}" data-k="${k}" aria-label="blank ${k + 1}">${v ? esc(v) : "&nbsp;?&nbsp;"}</button>`;
+        }).join("");
+        const chips = ui.locked ? "" : chipsFor(st, blanks[ui.active]).map((c, n) =>
+          `<button class="pick-chip ${ui.picks[ui.active] === c ? "on" : ""}" data-v="${esc(c)}"><kbd>${n + 1}</kbd> ${esc(c)}</button>`).join("");
+        $("widget").innerHTML = `<div class="code pick-code">${code}</div>` +
+          (ui.locked ? "" : `<div class="bank"><span class="bank-label">${blanks.length > 1 ? `Blank ${ui.active + 1} of ${blanks.length}` : "Pick one"}</span>${chips}</div>`);
+        document.querySelectorAll("#widget .slot").forEach((b) => (b.onclick = () => { if (ui.locked) return; ui.active = +b.dataset.k; this.draw(i); }));
+        document.querySelectorAll("#widget .pick-chip").forEach((b) => (b.onclick = () => this.choose(i, b.dataset.v)));
+      },
+      choose(i, v) {
+        ui.picks[ui.active] = v; ui.marks = null;
+        const empty = ui.picks.findIndex((p) => p === null);
+        if (empty >= 0) { ui.active = empty; this.draw(i); return; }
+        this.draw(i);
+        this.check(i);
+      },
+      key(i, n) { const st = steps[i], c = chipsFor(st, blanksOf(st)[ui.active])[n]; if (c !== undefined && !ui.locked) this.choose(i, c); },
+      check(i) {
+        const st = steps[i], blanks = blanksOf(st), code = assemble(st.code, ui.picks);
+        const res = runAt(code, i);
+        showRun(i, code, res);
+        ui.marks = ui.picks.map((v, k) => v === blanks[k].b);
+        const bad = ui.marks.map((m, k) => (m ? -1 : k)).filter((k) => k >= 0);
+        if (!bad.length && res.ok) { this.draw(i); return solve(i); }
+        ui.active = bad.length ? bad[0] : ui.active;
+        this.draw(i);
+        const why = bad.map((k) => blanks[k].why[ui.picks[k]]).filter(Boolean);
+        const which = blanks.length > 1 ? `Blank ${bad.map((k) => k + 1).join(" and ")} ${bad.length > 1 ? "aren't" : "isn't"} right. ` : "";
+        const body = why.length ? which + why.join(" ")
+          : !res.ok ? which + `MongoDB rejected it: <code>${esc(res.error)}</code>`
+          : which + "It ran, but it doesn't do what the task asks. Compare the phone with the task, then pick again.";
+        wrong(i, "Not quite", body);
+      },
+      fill(i) { ui.picks = blanksOf(steps[i]).map((b) => b.b); ui.marks = ui.picks.map(() => true); ui.locked = true; this.draw(i); },
+      lock(i) { ui.locked = true; ui.marks = ui.picks.map(() => true); this.draw(i); },
+      reveal(i) { ui.picks = blanksOf(steps[i]).map((b) => b.b); this.draw(i); this.check(i); },
+    },
 
-  function advance() {
-    const i = progress.step, st = steps[i];
-    feedback("ok", "Correct ✓", st.after, (st.trapNote ? `<p class="trap">${st.trapNote}</p>` : "") +
-      `<div class="actions"><button class="btn primary" id="continue">${i + 1 < steps.length ? "Continue the story →" : "Finish the day →"}</button></div>`);
-    const go = () => { progress.step = i + 1; save(); render(); const now = document.querySelector("#current .chapter, #current .card"); if (now) now.scrollIntoView({ behavior: "smooth", block: "start" }); };
-    $("continue").onclick = go;
-    $("continue").focus({ preventScroll: true });
-    document.querySelectorAll("#current .blank, #current .editor").forEach((x) => (x.disabled = true));
-    $("run").disabled = true; $("reveal").disabled = true;
-  }
+    choice: {
+      draw(i) {
+        const st = steps[i];
+        $("widget").innerHTML = optionButtons(st, (o) => `<code class="opt-code">${esc(o.code)}</code>`);
+        document.querySelectorAll("#widget .opt").forEach((b) => (b.onclick = () => this.choose(i, +b.dataset.k)));
+      },
+      choose(i, k) {
+        const st = steps[i], o = st.options[k];
+        const btn = document.querySelector(`#widget .opt[data-k="${k}"]`);
+        if (!btn || btn.disabled) return;
+        const res = runAt(o.code, i);
+        showRun(i, o.code, res);
+        if (o.ok) return solve(i);
+        btn.classList.add("bad");
+        wrong(i, `${LETTERS[k]} isn't it`, esc(o.why || "") + (res.ok ? "" : `<br><span class="muted">MongoDB says: <code>${esc(res.error)}</code></span>`) + "<br><span class='muted'>The phone shows what it did. Try another.</span>");
+      },
+      key(i, n) { if (n < steps[i].options.length) this.choose(i, n); },
+      fill() {},
+      lock: lockOptions,
+      reveal(i) { this.choose(i, steps[i].options.findIndex((o) => o.ok)); },
+    },
+
+    predict: {
+      draw(i) {
+        const st = steps[i];
+        $("widget").innerHTML = `<div class="code">${esc(st.query)}</div>` + optionButtons(st, (o) => `<span class="opt-text">${esc(o.text)}</span>`);
+        document.querySelectorAll("#widget .opt").forEach((b) => (b.onclick = () => this.choose(i, +b.dataset.k)));
+      },
+      choose(i, k) {
+        const st = steps[i], o = st.options[k];
+        const btn = document.querySelector(`#widget .opt[data-k="${k}"]`);
+        if (!btn || btn.disabled) return;
+        showRun(i, st.query, runAt(st.query, i));
+        if (o.ok) return solve(i);
+        btn.classList.add("bad");
+        wrong(i, `${LETTERS[k]} isn't what happens`, esc(o.why || "") + "<br><span class='muted'>The query just ran: the phone shows what really happens. Pick the answer that matches it.</span>");
+      },
+      key(i, n) { if (n < steps[i].options.length) this.choose(i, n); },
+      fill() {},
+      lock: lockOptions,
+      reveal(i) { this.choose(i, steps[i].options.findIndex((o) => o.ok)); },
+    },
+  };
+  // "fix the bug" is a choice with the broken query (and what mongosh said about it) on top
+  WIDGETS.bug = Object.assign(Object.create(WIDGETS.choice), {
+    draw(i) {
+      const st = steps[i], res = runAt(st.broken, i);
+      $("widget").innerHTML = `<div class="broken"><div class="broken-label">The intern's query</div><div class="code">${esc(st.broken)}</div>
+        <pre class="said ${res.ok ? "" : "err"}">${res.ok ? "→ " : "✖ "}${esc(short(res))}</pre></div>
+        <div class="opts-label">Which one fixes it?</div>` + optionButtons(st, (o) => `<code class="opt-code">${esc(o.code)}</code>`);
+      document.querySelectorAll("#widget .opt").forEach((b) => (b.onclick = () => this.choose(i, +b.dataset.k)));
+    },
+  });
+
+  // ---------- keyboard ----------
+  document.addEventListener("keydown", (e) => {
+    const t = e.target;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    // inside the query box, arrows move the cursor; they turn the slide only while the box is empty
+    const typing = t && (t.tagName === "INPUT" || (t.tagName === "TEXTAREA" && t.value.trim() && !t.disabled));
+    if (typing) return;
+    if (e.key === "ArrowRight") { e.preventDefault(); next(); }
+    else if (e.key === "ArrowLeft") { e.preventDefault(); prev(); }
+    else if (/^[1-4]$/.test(e.key) && progress.at > 0 && progress.at <= N) {
+      const i = progress.at - 1, w = WIDGETS[steps[i].mode];
+      if (w.key && !isSolved(i)) { e.preventDefault(); w.key(i, +e.key - 1); }
+    }
+  });
 
   function restart() {
-    if (progress.step > 0 && !confirm("Restart the day from step 1? Your progress on this device will be cleared.")) return;
-    progress = { step: 0, revealed: [] };
+    if (progress.solved.length && !confirm("Restart the day from the first slide? Your progress on this device will be cleared.")) return;
+    progress = { at: 0, solved: [], tried: [], revealed: [] };
     save();
-    $("output").innerHTML = 'instaDB&gt; <span class="muted">// run a query to see the result here</span>';
-    render();
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    go(0);
   }
-  $("restart").onclick = restart;
 
+  // ---------- wiring ----------
+  $("jump").innerHTML = `<option value="0">Intro</option>` +
+    steps.map((st, i) => `<option value="${i + 1}">${i + 1}. ${esc(st.op)} (${esc(st.screen.time)})</option>`).join("") +
+    `<option value="${LAST}">Finale</option>`;
+  $("jump").onchange = (e) => { e.target.blur(); go(+e.target.value); };
+  // the jump menu would otherwise eat ← → and change slides one option at a time
+  $("jump").addEventListener("keydown", (e) => { if (e.key === "ArrowLeft" || e.key === "ArrowRight") e.target.blur(); });
+  $("prev").onclick = prev;
+  $("next").onclick = next;
+  $("restart").onclick = restart;
+  $("phone-toggle").onclick = () => $("phone-col").classList.toggle("open");
+  window.addEventListener("hashchange", () => { const s = slideFromHash(); if (s !== null && s !== progress.at) go(s); });
+
+  const start = slideFromHash();
+  progress.at = start !== null ? Math.max(0, Math.min(LAST, start)) : Math.min(progress.at, LAST);
+  setHash(progress.at);
   render();
 })();
