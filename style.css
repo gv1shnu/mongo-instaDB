@@ -334,3 +334,25 @@ td.missing { color: var(--muted); }
 div.before { margin: 4px 0 8px; }
 div.before.big { margin: 8px 0 16px; }
 .ph-newpost { margin-left: auto; background: #e8f1fe; color: #1a5fb4; font-weight: 700; border-radius: 6px; padding: 1px 6px; font-size: 10px; }
+
+/* copy button on a given document */
+.given { position: relative; padding-right: 72px; }
+.copy-btn { position: absolute; top: 6px; right: 6px; font: 600 12px var(--sans); border: 1px solid var(--line); background: var(--surface); color: var(--ink-2); border-radius: 7px; padding: 4px 10px; cursor: pointer; }
+.copy-btn:hover, .copy-btn:focus-visible { border-color: var(--brand); color: var(--brand); }
+
+/* sign-in and score */
+.top-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.account { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; color: #cdbfe3; }
+.account[hidden] { display: none; }
+.acct-name { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #fff; font-weight: 600; }
+.acct-status { padding: 3px 9px; border-radius: 99px; background: rgba(255,255,255,0.08); }
+.acct-status.saved { color: #9df0c4; }
+.acct-status.offline, .acct-status.expired, .acct-status.wrong-domain, .acct-status.unavailable { color: #ffd27a; }
+.acct-out { font: 600 12px var(--sans); color: #cdbfe3; background: none; border: 1px solid rgba(255,255,255,0.18); border-radius: 8px; padding: 4px 9px; cursor: pointer; }
+.acct-out:hover { color: #fff; border-color: #fff; }
+.signin-panel { margin: 0 0 16px; padding: 12px 14px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--line); font-size: 15px; }
+.signin-panel.ok { border-color: var(--ok); background: var(--ok-bg); }
+.signin-panel .g-signin { margin: 10px 0 4px; min-height: 44px; }
+.signin-panel .muted { display: block; font-size: 13px; }
+.score-line { font-size: 17px; }
+@media (max-width: 560px) { .acct-name { max-width: 150px; } }

@@ -18,7 +18,10 @@
           <p class="sub">MongoDB CRUD &amp; operators, one story, one database</p>
         </div>
       </div>
-      <button class="btn restart" id="restart" title="Start the story again from 7 a.m.">Restart day</button>
+      <div class="top-right">
+        <div class="account" id="account" hidden aria-live="polite"></div>
+        <button class="btn restart" id="restart" title="Start the story again from 7 a.m.">Restart day</button>
+      </div>
     </div>
     <div class="wrap">
       <div class="progress" aria-label="Story progress">
@@ -61,6 +64,8 @@
     </aside>
   </main>
 
+  <script src="js/config.js"></script>
+  <script src="js/score.js"></script>
   <script src="js/data.js"></script>
   <script src="js/engine.js"></script>
   <script src="js/story.js"></script>

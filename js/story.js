@@ -18,6 +18,9 @@
   // Each step = one line of story + a task that makes sense on its own,
   // so a student can jump into any step without rereading the earlier ones.
   const task = (s) => `<p class="task"><span>Task</span>${s}</p>`;
+  // Meera's first two posts, used by the insertMany options
+  const POST1 = '{ username: "meera.dance", caption: "First dance cover!", type: "reel", likes: 0, comments: 0, hashtags: ["#dance"], createdAt: new Date("2026-10-26") }';
+  const POST2 = '{ username: "meera.dance", caption: "Studio selfie", type: "photo", likes: 0, comments: 0, hashtags: ["#dance", "#pune"], createdAt: new Date("2026-10-26") }';
   root.STORY = {
     title: "One day on instaDB",
     intro: "instaDB is a small photo-sharing app with two collections: <code>users</code> (8 people) and <code>posts</code> (12 posts). Follow it through one day, from a 7 a.m. sign-up to the midnight cleanup, one slide at a time. Most slides ask you to pick: an operator, a query, a fix or a prediction. A few ask you to write the whole query. Every option really runs on the data, the phone shows what it did to the app, wrong answers included, and the story's changes carry forward.",
@@ -41,16 +44,20 @@
           task("Insert this <b>one</b> document into the <code>users</code> collection.") +
           pre('{ username: "meera.dance", name: "Meera Nair", age: 20, city: "Pune",\n  followers: 0, verified: false, accountType: "creator",\n  interests: ["dance"] }'),
         answer: 'db.users.insertOne({ username: "meera.dance", name: "Meera Nair", age: 20, city: "Pune", followers: 0, verified: false, accountType: "creator", interests: ["dance"] })',
-        hint: "One document → insertOne( { ... } ). You can copy the document from the form above.",
+        hint: "One document → insertOne( { ... } ). Press Copy on the form, then paste it between the brackets.",
         after: "<b>acknowledged: true</b>, and MongoDB gave Meera an <code>_id</code> on its own: you never typed one. instaDB now has 9 users.",
       },
       {
-        chapter: "dawn", op: "insertMany()", mode: "write",
+        chapter: "dawn", op: "insertMany()", mode: "choice",
         screen: { time: "7:10", title: "meera.dance" },
-        before: "7:10 a.m. Meera (<code>meera.dance</code>) uploads her first two posts at the same time." +
-          task("Insert <b>both</b> documents below into the <code>posts</code> collection with <b>one</b> command.") +
-          pre('{ username: "meera.dance", caption: "First dance cover!", type: "reel",\n  likes: 0, comments: 0, hashtags: ["#dance"],\n  createdAt: new Date("2026-10-26") }\n\n{ username: "meera.dance", caption: "Studio selfie", type: "photo",\n  likes: 0, comments: 0, hashtags: ["#dance", "#pune"],\n  createdAt: new Date("2026-10-26") }'),
-        answer: 'db.posts.insertMany([ { username: "meera.dance", caption: "First dance cover!", type: "reel", likes: 0, comments: 0, hashtags: ["#dance"], createdAt: new Date("2026-10-26") }, { username: "meera.dance", caption: "Studio selfie", type: "photo", likes: 0, comments: 0, hashtags: ["#dance", "#pune"], createdAt: new Date("2026-10-26") } ])',
+        before: "7:10 a.m. Meera (<code>meera.dance</code>) uploads her first two posts at the same time: a reel called \"First dance cover!\" and a photo called \"Studio selfie\"." +
+          task("Insert <b>both</b> posts into the <code>posts</code> collection with <b>one</b> command. <b>Pick the query.</b> Look at the method and the brackets."),
+        options: [
+          { code: `db.posts.insertOne([ ${POST1}, ${POST2} ])`, why: "insertOne takes exactly one document, not a list. MongoDB refuses it." },
+          { code: `db.posts.insertMany([ ${POST1}, ${POST2} ])`, ok: true },
+          { code: `db.posts.insertMany(${POST1}, ${POST2})`, why: "insertMany needs the documents inside square brackets [ ], as one list. Without them, MongoDB refuses it." },
+          { code: `db.posts.insertMany([ ${POST1} ])`, why: "Right method and brackets, but the list holds only the reel, so the Studio selfie is never posted." },
+        ],
         hint: "Several documents → insertMany( [ {...}, {...} ] ). Note the square brackets around the list.",
         after: "Two <code>insertedIds</code> come back, one per post. Meera's profile now shows 2 posts, and instaDB has 14.",
       },

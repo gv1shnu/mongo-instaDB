@@ -2,6 +2,8 @@
 // slide N+1 is the finale. The phone beside the slide always shows the story.
 (function () {
   const E = window.InstaEngine, STORY = window.STORY, SEED = window.SEED;
+  // Score tracking is optional: a stand-in that does nothing keeps the deck working without score.js
+  const Score = window.Score || { enabled: false, mustSignIn: () => false, init() {}, event() {}, sync() {}, renderButtons() {}, signOut() {} };
   const { assemble, canonical, stepNow, chipsFor } = window;
   const steps = STORY.steps, N = steps.length, LAST = N + 1;
   const $ = (id) => document.getElementById(id);
@@ -22,15 +24,43 @@
   });
   const runAt = (code, i) => E.run(code, states[i], { now: stepNow(steps[i]) });
 
-  const KEY = "instadb-deck-v1";
-  let progress = { at: 0, solved: [], tried: [], revealed: [] };
-  try {
-    const saved = JSON.parse(localStorage.getItem(KEY));
-    if (saved && Number.isInteger(saved.at) && Array.isArray(saved.solved)) progress = Object.assign(progress, saved);
-  } catch (e) {}
-  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(progress)); } catch (e) {} };
+  // Progress lives in the browser, one copy per signed-in student (shared lab computers),
+  // plus one for whoever hasn't signed in.
+  const BASE_KEY = "instadb-deck-v1";
+  let key = BASE_KEY;
+  const fresh = () => ({ at: 0, solved: [], tried: [], revealed: [], firstTry: [], wrong: {} });
+  function load(k) {
+    try {
+      const saved = JSON.parse(localStorage.getItem(k));
+      if (saved && Number.isInteger(saved.at) && Array.isArray(saved.solved)) return Object.assign(fresh(), saved);
+    } catch (e) {}
+    return fresh();
+  }
+  let progress = load(key);
+  const save = () => { try { localStorage.setItem(key, JSON.stringify(progress)); } catch (e) {} };
   const mark = (list, i) => { if (!progress[list].includes(i)) progress[list].push(i); };
   const isSolved = (i) => progress.solved.includes(i);
+  // score: slides solved without "Show answer"
+  const scoreOf = (p) => p.solved.filter((i) => !p.revealed.includes(i)).length;
+  const snapshot = () => ({ slides: N, at: progress.at, solved: progress.solved, firstTry: progress.firstTry, revealed: progress.revealed, wrong: progress.wrong });
+
+  function switchOwner(u) {
+    const nextKey = u ? BASE_KEY + ":" + u.email : BASE_KEY;
+    if (nextKey === key) return;
+    let mine = null;
+    try { mine = localStorage.getItem(nextKey); } catch (e) {}
+    if (u && !mine) {
+      // first sign-in on this device: what was done before signing in counts for this student
+      key = nextKey; save();
+      try { localStorage.removeItem(BASE_KEY); } catch (e) {}
+    } else {
+      key = nextKey;
+      progress = u ? load(key) : fresh();
+    }
+    setHash(progress.at);
+    ui = {};
+    render();
+  }
 
   // per-slide state that isn't saved: picks for blanks, the active blank
   let ui = {};
@@ -38,7 +68,12 @@
   // ---------- navigation ----------
   const slideFromHash = () => { const n = parseInt(location.hash.replace(/^#\/?/, ""), 10); return Number.isInteger(n) ? n : null; };
   const setHash = (n) => history.replaceState(null, "", location.pathname + location.search + "#" + n);
-  const canGoNext = () => progress.at === 0 || progress.at > N || isSolved(progress.at - 1) || progress.tried.includes(progress.at - 1);
+  const gated = () => Score.mustSignIn();
+  const canGoNext = () => {
+    const s = progress.at;
+    if (s > N || gated()) return false;
+    return s === 0 || isSolved(s - 1) || progress.tried.includes(s - 1);
+  };
   function go(slide) {
     slide = Math.max(0, Math.min(LAST, slide));
     progress.at = slide; save();
@@ -56,11 +91,14 @@
   function render() {
     const s = progress.at;
     if (s === 0) renderIntro();
+    else if (gated()) renderGate();
     else if (s > N) renderFinale();
     else renderStep(s - 1);
     renderNav();
     renderProgress();
     renderData();
+    renderAccount();
+    Score.renderButtons();
   }
 
   function renderNav() {
@@ -69,13 +107,14 @@
     $("next").disabled = s > N || !canGoNext();
     $("next").textContent = s === 0 ? "Start →" : s === N ? "Finish →" : "Next →";
     $("next").classList.toggle("ready", s > 0 && s <= N && isSolved(s - 1));
-    $("nav-note").textContent = s > 0 && s <= N && !canGoNext() ? "Answer this slide to unlock Next. A wrong try counts." : "";
+    $("nav-note").textContent = gated() ? "Sign in with your university Google account to start."
+      : s > 0 && s <= N && !canGoNext() ? "Answer this slide to unlock Next. A wrong try counts." : "";
     $("jump").value = String(s);
   }
   function renderProgress() {
     const s = progress.at;
     $("bar-fill").style.width = (progress.solved.length / N) * 100 + "%";
-    $("progress-label").textContent = s === 0 ? `${progress.solved.length} of ${N} solved`
+    $("progress-label").textContent = s === 0 ? `${progress.solved.length} of ${N} solved · score ${scoreOf(progress)}`
       : s > N ? "Day complete" : `Slide ${s} of ${N} · ${chapterOf(steps[s - 1]).title.split(":")[0]}`;
   }
   function renderData() {
@@ -105,9 +144,55 @@
         const first = steps.findIndex((s) => s.chapter === c.id);
         return `<li><a href="#${first + 1}">${esc(c.title)}</a></li>`;
       }).join("")}</ol>
+      ${signInPanel()}
       <p class="muted small">Use <kbd>←</kbd> <kbd>→</kbd> to move between slides and <kbd>1</kbd>–<kbd>4</kbd> to pick an option.</p>`;
     resetTerminal();
     phone({ idle: true, before: SEED, spec: { time: "6:59" } });
+  }
+
+  // ---------- sign-in and score ----------
+  const scoreLine = () => `Your score: <b>${scoreOf(progress)} / ${N}</b> (slides solved without "Show answer"), ${progress.firstTry.length} of them on the first try.`;
+  function signInPanel() {
+    if (!Score.enabled) return "";
+    const u = Score.user;
+    if (u) return `<div class="signin-panel ok"><b>Signed in as ${esc(u.email)}.</b> Your score is saved to the class sheet after every answer.
+      <span class="muted" id="signin-detail">${esc(Score.detail)}</span></div>`;
+    return `<div class="signin-panel"><b>Sign in with your university Google account</b> (<code>@${esc(Score.domain)}</code>) so your score is recorded.
+      Your personal Gmail won't work.${Score.status === "unavailable" ? "" : '<div class="g-signin"></div>'}<span class="muted" id="signin-detail">${esc(Score.detail)}</span></div>`;
+  }
+  function renderGate() {
+    $("slide").innerHTML = `<div class="eyebrow">Before you start</div>
+      <h2 class="slide-title">Sign in to record your score</h2>
+      ${signInPanel()}
+      <p class="muted small">${Score.status === "loading" ? "Loading Google sign-in…" : "Once you're signed in, this slide opens by itself."}</p>`;
+    resetTerminal();
+    phone({ idle: true, before: SEED, spec: { time: "6:59" } });
+  }
+  // the account chip in the header; rebuilt only when its shape changes so the Google button doesn't flicker
+  let accountShape = "";
+  function renderAccount() {
+    const el = $("account");
+    if (!Score.enabled) { el.hidden = true; return; }
+    el.hidden = false;
+    const u = Score.user, st = Score.status;
+    const needsButton = !u || st === "expired" || st === "wrong-domain";
+    const shape = (u ? u.email : "-") + "|" + needsButton;
+    const labels = { loading: "Loading sign-in…", unavailable: "Score not recorded", signin: "Not signed in", "wrong-domain": "Use your university account",
+      saving: "Saving…", saved: "Score saved ✓", offline: "Offline: will retry", expired: "Sign in again to save" };
+    if (shape !== accountShape) {
+      accountShape = shape;
+      el.innerHTML = `${u ? `<span class="acct-name" title="${esc(u.email)}">${esc(u.email)}</span>` : ""}
+        <span class="acct-status" id="acct-status"></span>
+        ${needsButton ? '<span class="g-signin" data-size="small"></span>' : ""}
+        ${u ? '<button class="acct-out" id="acct-out" type="button">Sign out</button>' : ""}`;
+      if (u) $("acct-out").onclick = () => { if (confirm("Sign out? Your saved score stays in the class sheet.")) Score.signOut(); };
+    }
+    $("acct-status").textContent = `${labels[st] || ""}${u ? ` · ${scoreOf(progress)}/${N}` : ""}`;
+    $("acct-status").className = "acct-status " + st;
+    el.title = Score.detail || "";
+    const d = document.getElementById("signin-detail");
+    if (d) d.textContent = Score.detail;
+    Score.renderButtons();
   }
 
   function renderFinale() {
@@ -116,6 +201,7 @@
     $("slide").innerHTML = `<div class="eyebrow">Midnight</div>
       <h2 class="slide-title">That's the day on instaDB 🌙</h2>
       <p class="lead">You created a user and her posts, read profiles, filtered with comparison, logical, regex and array operators, paged through a sorted feed, changed fields and arrays with update operators, replaced a whole document and cleaned up. instaDB ends the day with <b>${end.users.length} users</b> and <b>${end.posts.length} posts</b>.</p>
+      <p class="score-line">${scoreLine()}${Score.user ? ` Saved to the class sheet as ${esc(Score.user.email)}.` : ""}</p>
       <p class="muted">${progress.solved.length} of ${N} slides solved. ${rev ? `You used "Show answer" on ${rev} slide${rev > 1 ? "s" : ""}: ${progress.revealed.slice().sort((a, b) => a - b).map((i) => `<a href="#${i + 1}">${i + 1}</a>`).join(", ")}. Try those again without it.` : "You didn't reveal a single answer."}</p>
       <div class="actions"><button class="btn primary" id="again">Restart the day</button></div>`;
     $("again").onclick = restart;
@@ -135,11 +221,43 @@
         <button class="btn" id="reveal">Show answer</button>
       </div>
       <div class="feedback" id="feedback" hidden></div>`;
+    if (st.mode === "write") document.querySelectorAll("#slide .given").forEach(addCopy);
     $("hint").onclick = () => feedback("info", "Hint", esc(st.hint));
     $("reveal").onclick = () => reveal(i);
     WIDGETS[st.mode].draw(i);
     if (isSolved(i)) showSolved(i);
     else { resetTerminal(); phone({ idle: true, before: states[i], spec: st.screen }); }
+  }
+
+  // A Copy button on a given document, so write slides test the query, not retyping the fields.
+  function addCopy(pre) {
+    const text = pre.textContent;
+    const btn = document.createElement("button");
+    btn.className = "copy-btn";
+    btn.type = "button";
+    btn.textContent = "Copy";
+    btn.setAttribute("aria-label", "Copy this document");
+    const done = (ok) => {
+      if (!ok) { // no clipboard access: select the document so Ctrl+C copies it
+        const range = document.createRange(); range.selectNodeContents(pre.firstChild);
+        const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+      }
+      btn.textContent = ok ? "Copied ✓" : "Selected: press Ctrl+C";
+      setTimeout(() => (btn.textContent = "Copy"), ok ? 1600 : 4000);
+    };
+    const fallback = () => {
+      const ta = Object.assign(document.createElement("textarea"), { value: text });
+      ta.style.cssText = "position:fixed;opacity:0";
+      document.body.appendChild(ta); ta.select();
+      let ok = false;
+      try { ok = document.execCommand("copy"); } catch (e) {}
+      ta.remove(); done(ok);
+    };
+    btn.onclick = () => {
+      if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(() => done(true), fallback);
+      else fallback();
+    };
+    pre.appendChild(btn);
   }
 
   function feedback(kind, head, body, extra) {
@@ -176,18 +294,26 @@
   const short = (res) => (res.ok ? E.show(res.value).replace(/\s*\n\s*/g, " ") : res.error);
 
   // ---------- solving ----------
-  function solve(i) {
-    mark("solved", i); mark("tried", i); save();
+  const record = (i, kind, answer) => Score.event({ slide: i, op: steps[i].op, kind, answer: String(answer == null ? "" : answer).slice(0, 300) });
+  function solve(i, answer, replay) {
     const st = steps[i];
+    if (!replay && !isSolved(i)) {
+      if (!progress.tried.includes(i)) mark("firstTry", i);
+      record(i, "solved", answer);
+    }
+    mark("solved", i); mark("tried", i); save();
     feedback("ok", "Correct ✓", st.after, (st.trapNote ? `<p class="trap">${st.trapNote}</p>` : "") +
       `<div class="actions"><button class="btn primary" id="continue">${i + 1 < N ? "Next slide →" : "Finish the day →"}</button></div>`);
     $("continue").onclick = next;
     WIDGETS[st.mode].lock(i);
     $("reveal").disabled = true;
-    renderNav(); renderProgress();
+    renderNav(); renderProgress(); renderAccount();
   }
-  function wrong(i, head, body) {
-    mark("tried", i); save();
+  function wrong(i, head, body, answer) {
+    mark("tried", i);
+    progress.wrong[i] = (progress.wrong[i] || 0) + 1;
+    save();
+    record(i, "wrong", answer);
     feedback("bad", head, body);
     renderNav();
   }
@@ -198,9 +324,10 @@
     const res = runAt(code, i);
     showRun(i, code, res);
     $("phone-col").classList.remove("open");
-    solve(i);
+    solve(i, null, true);
   }
   function reveal(i) {
+    if (!progress.revealed.includes(i) && !isSolved(i)) record(i, "shown", "");
     mark("revealed", i); mark("tried", i); save();
     WIDGETS[steps[i].mode].reveal(i);
   }
@@ -258,9 +385,9 @@
         showRun(i, code, res);
         const ok = res.ok && E.fingerprint(res, ordered(st)) === E.fingerprint(want, ordered(st));
         $("editor").classList.toggle("ok", ok); $("editor").classList.toggle("bad", !ok);
-        if (ok) return solve(i);
-        if (!res.ok) return wrong(i, "MongoDB rejected the query", esc(res.error) + "<br><span class='muted'>The error is also in the terminal below.</span>");
-        wrong(i, "It ran, but it's not what the story needs", explainDiff(st, res, want));
+        if (ok) return solve(i, code);
+        if (!res.ok) return wrong(i, "MongoDB rejected the query", esc(res.error) + "<br><span class='muted'>The error is also in the terminal below.</span>", code);
+        wrong(i, "It ran, but it's not what the story needs", explainDiff(st, res, want), code);
       },
       fill(i) { const ed = $("editor"); ed.value = canonical(steps[i]); ed.dispatchEvent(new Event("input")); },
       lock() { $("editor").disabled = true; $("editor").classList.add("ok"); $("run").disabled = true; },
@@ -303,7 +430,7 @@
         showRun(i, code, res);
         ui.marks = ui.picks.map((v, k) => v === blanks[k].b);
         const bad = ui.marks.map((m, k) => (m ? -1 : k)).filter((k) => k >= 0);
-        if (!bad.length && res.ok) { this.draw(i); return solve(i); }
+        if (!bad.length && res.ok) { this.draw(i); return solve(i, ui.picks.join(" · ")); }
         ui.active = bad.length ? bad[0] : ui.active;
         this.draw(i);
         const why = bad.map((k) => blanks[k].why[ui.picks[k]]).filter(Boolean);
@@ -311,7 +438,7 @@
         const body = why.length ? which + why.join(" ")
           : !res.ok ? which + `MongoDB rejected it: <code>${esc(res.error)}</code>`
           : which + "It ran, but it doesn't do what the task asks. Compare the phone with the task, then pick again.";
-        wrong(i, "Not quite", body);
+        wrong(i, "Not quite", body, ui.picks.join(" · "));
       },
       fill(i) { ui.picks = blanksOf(steps[i]).map((b) => b.b); ui.marks = ui.picks.map(() => true); ui.locked = true; this.draw(i); },
       lock(i) { ui.locked = true; ui.marks = ui.picks.map(() => true); this.draw(i); },
@@ -330,9 +457,9 @@
         if (!btn || btn.disabled) return;
         const res = runAt(o.code, i);
         showRun(i, o.code, res);
-        if (o.ok) return solve(i);
+        if (o.ok) return solve(i, `${LETTERS[k]}: ${o.code}`);
         btn.classList.add("bad");
-        wrong(i, `${LETTERS[k]} isn't it`, esc(o.why || "") + (res.ok ? "" : `<br><span class="muted">MongoDB says: <code>${esc(res.error)}</code></span>`) + "<br><span class='muted'>The phone shows what it did. Try another.</span>");
+        wrong(i, `${LETTERS[k]} isn't it`, esc(o.why || "") + (res.ok ? "" : `<br><span class="muted">MongoDB says: <code>${esc(res.error)}</code></span>`) + "<br><span class='muted'>The phone shows what it did. Try another.</span>", `${LETTERS[k]}: ${o.code}`);
       },
       key(i, n) { if (n < steps[i].options.length) this.choose(i, n); },
       fill() {},
@@ -351,9 +478,9 @@
         const btn = document.querySelector(`#widget .opt[data-k="${k}"]`);
         if (!btn || btn.disabled) return;
         showRun(i, st.query, runAt(st.query, i));
-        if (o.ok) return solve(i);
+        if (o.ok) return solve(i, `${LETTERS[k]}: ${o.text}`);
         btn.classList.add("bad");
-        wrong(i, `${LETTERS[k]} isn't what happens`, esc(o.why || "") + "<br><span class='muted'>The query just ran: the phone shows what really happens. Pick the answer that matches it.</span>");
+        wrong(i, `${LETTERS[k]} isn't what happens`, esc(o.why || "") + "<br><span class='muted'>The query just ran: the phone shows what really happens. Pick the answer that matches it.</span>", `${LETTERS[k]}: ${o.text}`);
       },
       key(i, n) { if (n < steps[i].options.length) this.choose(i, n); },
       fill() {},
@@ -388,9 +515,10 @@
   });
 
   function restart() {
-    if (progress.solved.length && !confirm("Restart the day from the first slide? Your progress on this device will be cleared.")) return;
-    progress = { at: 0, solved: [], tried: [], revealed: [] };
+    if (progress.solved.length && !confirm("Restart the day from the first slide? Your progress on this device will be cleared" + (Score.user ? ", and your score in the class sheet starts again from 0." : "."))) return;
+    progress = fresh();
     save();
+    Score.sync();
     go(0);
   }
 
@@ -411,4 +539,18 @@
   progress.at = start !== null ? Math.max(0, Math.min(LAST, start)) : Math.min(progress.at, LAST);
   setHash(progress.at);
   render();
+
+  // score tracking starts after the first render, so the deck shows up even if Google is slow or blocked
+  let wasGated = gated(), lastStatus = Score.status;
+  Score.init({
+    getSnapshot: snapshot,
+    onUser: switchOwner,
+    onChange: () => {
+      renderAccount();
+      // redraw the slide when the sign-in gate opens or closes, or the intro's sign-in panel changes
+      const redraw = gated() !== wasGated || (progress.at === 0 && Score.status !== lastStatus && ["signin", "unavailable", "wrong-domain"].includes(Score.status));
+      wasGated = gated(); lastStatus = Score.status;
+      if (redraw) render();
+    },
+  });
 })();
