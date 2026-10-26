@@ -7,7 +7,9 @@
   const kfmt = (n) => (typeof n !== "number" ? "—" : n >= 1e6 ? (n / 1e6).toFixed(1).replace(/\.0$/, "") + "M" : n >= 1e3 ? (n / 1e3).toFixed(1).replace(/\.0$/, "") + "K" : String(n));
   const hash = (s) => { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h; };
   const EMOJI = { "#coding": "💻", "#webdev": "🧑‍💻", "#photography": "📷", "#mumbai": "🌇", "#travel": "🏔️", "#food": "🍜", "#bengaluru": "🥞", "#fitness": "💪", "#books": "📚", "#memes": "😂", "#art": "🎨", "#inktober": "🖋️", "#dance": "💃", "#pune": "🌆" };
-  const emojiOf = (p) => { for (const h of p.hashtags || []) if (EMOJI[h]) return EMOJI[h]; return "✨"; };
+  // a wrong answer can turn a list into text or a number, so treat list fields defensively
+  const listOf = (v) => (Array.isArray(v) ? v : v === undefined || v === null ? [] : [v]);
+  const emojiOf = (p) => { for (const h of listOf(p.hashtags)) if (EMOJI[h]) return EMOJI[h]; return "✨"; };
   const tileStyle = (key) => { const h = hash(key) % 360; return `background:linear-gradient(135deg,hsl(${h} 70% 62%),hsl(${(h + 50) % 360} 72% 48%))`; };
   const typeIcon = (t) => (t === "reel" ? '<span class="ph-type">▶</span>' : t === "carousel" ? '<span class="ph-type">❐</span>' : "");
   const initials = (u) => esc(String(u || "?").replace(/[._].*/, "").slice(0, 2).toUpperCase());
@@ -44,7 +46,7 @@
       <header>${avatar(p.username)}<b>${esc(p.username)}</b>${tick(u.verified)}${opts.rank ? `<span class="ph-rank">#${opts.rank}</span>` : ""}${opts.badge || ""}</header>
       <div class="ph-media" style="${tileStyle(p.caption)}"><span class="ph-emoji big">${emojiOf(p)}</span>${typeIcon(p.type)}</div>
       <div class="ph-actions"><span>♡ <b>${kfmt(p.likes)}</b>${opts.delta || ""}</span><span>💬 ${kfmt(p.comments)}</span><span class="ph-date">${dateStr(p.createdAt)}</span></div>
-      <p class="ph-cap"><b>${esc(p.username)}</b> ${esc(p.caption)} <span class="ph-tags">${(p.hashtags || []).map((h) => esc(Array.isArray(h) ? "[" + h.join(", ") + "]" : h)).join(" ")}</span></p>
+      <p class="ph-cap"><b>${esc(p.username)}</b> ${esc(p.caption)} <span class="ph-tags">${listOf(p.hashtags).map((h) => esc(Array.isArray(h) ? "[" + h.join(", ") + "]" : h)).join(" ")}</span></p>
       ${opts.diff || ""}
     </article>`;
   }
@@ -60,12 +62,12 @@
   function profile(u, state, before) {
     const posts = state.posts.filter((p) => p.username === u.username);
     const old = before ? userOf(before, u.username) : null;
-    const oldInterests = old ? (old.interests || []).map((x) => JSON.stringify(x)) : [];
-    const chips = (u.interests || []).map((x, i) => {
+    const oldInterests = old ? listOf(old.interests).map((x) => JSON.stringify(x)) : [];
+    const chips = listOf(u.interests).map((x, i) => {
       const nested = Array.isArray(x);
       const isNew = old && (i >= oldInterests.length || oldInterests[i] !== JSON.stringify(x));
       return `<span class="ph-int ${isNew ? "new" : ""} ${nested ? "nested" : ""}">${esc(nested ? "[" + x.join(", ") + "]" : x)}</span>`;
-    }).join("") + (old ? (old.interests || []).filter((x) => !(u.interests || []).some((y) => JSON.stringify(y) === JSON.stringify(x)))
+    }).join("") + (old ? listOf(old.interests).filter((x) => !listOf(u.interests).some((y) => JSON.stringify(y) === JSON.stringify(x)))
       .map((x) => `<span class="ph-int gone">${esc(Array.isArray(x) ? "[" + x.join(", ") + "]" : x)}</span>`).join("") : "");
     const nowVerified = old && !old.verified && u.verified;
     return `<div class="ph-profile">
@@ -74,7 +76,7 @@
       <p class="ph-prof-name"><b>${esc(u.username)}</b>${tick(u.verified)}${nowVerified ? '<span class="ph-new-badge">just verified</span>' : ""}</p>
       <p class="ph-prof-sub">${esc(fullName(u))} · ${esc(u.city || "")}${u.accountType ? " · " + esc(u.accountType) : ""}</p>
       <div class="ph-ints">${chips}</div>
-      ${old ? diffChips(old, u, ["interests"]) : ""}
+      ${old ? diffChips(old, u, Array.isArray(u.interests) && Array.isArray(old.interests) ? ["interests"] : []) : ""}
       <div class="ph-grid">${posts.map((p) => tile(p)).join("") || '<p class="ph-empty-sm">No posts yet</p>'}</div>
     </div>`;
   }

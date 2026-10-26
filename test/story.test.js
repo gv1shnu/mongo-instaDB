@@ -1,4 +1,4 @@
-require("../js/data.js"); require("../js/engine.js"); require("../js/story.js");
+require("../js/data.js"); require("../js/engine.js"); require("../js/story.js"); require("../js/phone.js");
 const { run, fingerprint, show } = globalThis.InstaEngine;
 const STORY = globalThis.STORY, canon = globalThis.canonical, stepNow = globalThis.stepNow;
 let state = globalThis.SEED, fail = 0;
@@ -58,8 +58,15 @@ const writes = STORY.steps.filter((s) => s.mode === "write").length;
 expect(`5 or 6 write steps (${writes})`, writes >= 5 && writes <= 6, true);
 STORY.steps.forEach((st, i) => {
   const now = stepNow(st), want = run(canon(st), states[i], { now });
+  // the phone preview must draw whatever an option does to the data
+  const draw = (label, r) => {
+    try { globalThis.Phone.screenFor({ res: r, before: states[i], after: r.ok ? r.state : null, spec: st.screen }); }
+    catch (e) { fail++; console.log(`FAIL  step ${i + 1} ${label}: phone crashed: ${e.message}`); }
+  };
+  draw("answer", want);
   const check = (label, code, note) => {
     const r = run(code, states[i], { now });
+    draw(label, r);
     const same = r.ok && fingerprint(r, true) === fingerprint(want, true);
     const ok = !same || !!note;
     if (!ok) fail++;

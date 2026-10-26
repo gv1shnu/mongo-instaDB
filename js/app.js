@@ -158,7 +158,7 @@
     if (u) return `<div class="signin-panel ok"><b>Signed in as ${esc(u.email)}.</b> Your score is saved to the class sheet after every answer.
       <span class="muted" id="signin-detail">${esc(Score.detail)}</span></div>`;
     return `<div class="signin-panel"><b>Sign in with your university Google account</b> (${Score.domains.map((d) => `<code>@${esc(d)}</code>`).join(" or ")}) so your score is recorded.
-      Your personal Gmail won't work.${Score.status === "unavailable" ? "" : '<div class="g-signin"></div>'}<span class="muted" id="signin-detail">${esc(Score.detail)}</span></div>`;
+      Your personal Gmail won't work.${Score.status === "unavailable" ? "" : '<div class="g-signin"></div><span class="muted small">Nothing happens when you click? Allow pop-ups for this site, or open the link in Chrome instead of an app\'s built-in browser.</span>'}<span class="muted" id="signin-detail">${esc(Score.detail)}</span></div>`;
   }
   function renderGate() {
     $("slide").innerHTML = `<div class="eyebrow">Before you start</div>
@@ -268,7 +268,12 @@
   }
 
   // ---------- phone + terminal ----------
-  const phone = (ctx) => { if (window.Phone) window.Phone.render($("phone"), ctx); };
+  // the phone is only a preview: if drawing it fails, say so on the phone and keep the slide working
+  const phone = (ctx) => {
+    if (!window.Phone) return;
+    try { window.Phone.render($("phone"), ctx); }
+    catch (e) { $("phone").innerHTML = '<div class="ph-frame"><div class="ph-screen"><div class="ph-emptystate"><div class="ph-empty-icon">📵</div><b>Preview unavailable</b><small>The terminal below still shows the result.</small></div></div></div>'; }
+  };
   const resetTerminal = () => { $("output").innerHTML = 'instaDB&gt; <span class="muted">// every query you run or pick shows its result here</span>'; };
   function showRun(i, code, res) {
     terminal(code.trim(), res, states[i]);

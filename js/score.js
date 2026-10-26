@@ -76,6 +76,9 @@
           hd: domains.length === 1 ? domains[0] : undefined,
           auto_select: true,
           cancel_on_tap_outside: false,
+          // Chrome's built-in sign-in (FedCM) needs no pop-up window, so pop-up blockers can't stop it
+          use_fedcm_for_prompt: true,
+          use_fedcm_for_button: true,
         });
         gisReady = true;
         if (!user) { setStatus(status === "loading" ? "signin" : status); google.accounts.id.prompt(); }
@@ -85,7 +88,8 @@
     document.head.appendChild(s);
   }
   function unavailable() {
-    if (gisReady) return;
+    // a student who is already signed in keeps saving; only new sign-ins need Google's script
+    if (gisReady || user) return;
     setStatus("unavailable", "Google sign-in couldn't load, so your score isn't being recorded. You can still practise.");
   }
 
