@@ -15,6 +15,22 @@
   const tick = (v) => (v ? '<span class="ph-tick" title="verified">✓</span>' : "");
   const dateStr = (d) => (d instanceof Date ? d.toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "UTC" }) : "");
   const userOf = (state, name) => state.users.find((u) => u.username === name);
+  const fullName = (u) => u.name || u.fullName || "";
+  const short = (v) => v instanceof Date ? v.toISOString().slice(0, 16).replace("T", " ") + " UTC"
+    : Array.isArray(v) ? "[" + v.map((x) => (Array.isArray(x) ? "[" + x.join(", ") + "]" : String(x))).join(", ") + "]" : String(v);
+  // Field-by-field changes between two versions of a document: added, removed, changed.
+  function diffChips(o, n, skip = []) {
+    if (!o || !n) return "";
+    const keys = [...new Set(Object.keys(o).concat(Object.keys(n)))].filter((k) => k !== "_id" && !skip.includes(k));
+    const chips = keys.map((k) => {
+      const a = o[k], b = n[k];
+      if (b === undefined) return `<span class="ph-diff del">− ${esc(k)}</span>`;
+      if (a === undefined) return `<span class="ph-diff add">+ ${esc(k)}: ${esc(short(b))}</span>`;
+      if (short(a) !== short(b)) return `<span class="ph-diff">${esc(k)}: ${esc(short(a))} → ${esc(short(b))}</span>`;
+      return "";
+    }).join("");
+    return chips ? `<div class="ph-diffs">${chips}</div>` : "";
+  }
 
   // ---------- building blocks ----------
   function tile(p, extra = "") {
@@ -29,15 +45,16 @@
       <div class="ph-media" style="${tileStyle(p.caption)}"><span class="ph-emoji big">${emojiOf(p)}</span>${typeIcon(p.type)}</div>
       <div class="ph-actions"><span>♡ <b>${kfmt(p.likes)}</b>${opts.delta || ""}</span><span>💬 ${kfmt(p.comments)}</span><span class="ph-date">${dateStr(p.createdAt)}</span></div>
       <p class="ph-cap"><b>${esc(p.username)}</b> ${esc(p.caption)} <span class="ph-tags">${(p.hashtags || []).map((h) => esc(Array.isArray(h) ? "[" + h.join(", ") + "]" : h)).join(" ")}</span></p>
+      ${opts.diff || ""}
     </article>`;
   }
-  function personRow(u, field) {
+  function personRow(u, field, diff = "") {
     let chip = "";
     if (field) {
       const v = u[field];
       chip = v === undefined ? `<span class="ph-chip missing">no ${esc(field)}</span>` : `<span class="ph-chip">${esc(field)}: ${esc(v)}</span>`;
     }
-    return `<li class="ph-person">${avatar(u.username)}<div class="ph-who"><span><b>${esc(u.username)}</b>${tick(u.verified)}</span><small>${esc(u.name || "")} · ${esc(u.city || "")}</small></div>
+    return `<li class="ph-person">${avatar(u.username)}<div class="ph-who"><span><b>${esc(u.username)}</b>${tick(u.verified)}</span><small>${esc(fullName(u))} · ${esc(u.city || "")}</small>${diff}</div>
       <div class="ph-right"><b>${kfmt(u.followers)}</b><small>followers</small>${chip}</div></li>`;
   }
   function profile(u, state, before) {
@@ -48,14 +65,16 @@
       const nested = Array.isArray(x);
       const isNew = old && (i >= oldInterests.length || oldInterests[i] !== JSON.stringify(x));
       return `<span class="ph-int ${isNew ? "new" : ""} ${nested ? "nested" : ""}">${esc(nested ? "[" + x.join(", ") + "]" : x)}</span>`;
-    }).join("");
+    }).join("") + (old ? (old.interests || []).filter((x) => !(u.interests || []).some((y) => JSON.stringify(y) === JSON.stringify(x)))
+      .map((x) => `<span class="ph-int gone">${esc(Array.isArray(x) ? "[" + x.join(", ") + "]" : x)}</span>`).join("") : "");
     const nowVerified = old && !old.verified && u.verified;
     return `<div class="ph-profile">
       <div class="ph-prof-top">${avatar(u.username, "lg")}
         <div class="ph-stats"><div><b>${posts.length}</b><small>posts</small></div><div><b>${kfmt(u.followers)}</b><small>followers</small></div></div></div>
       <p class="ph-prof-name"><b>${esc(u.username)}</b>${tick(u.verified)}${nowVerified ? '<span class="ph-new-badge">just verified</span>' : ""}</p>
-      <p class="ph-prof-sub">${esc(u.name || "")} · ${esc(u.city || "")}${u.accountType ? " · " + esc(u.accountType) : ""}</p>
+      <p class="ph-prof-sub">${esc(fullName(u))} · ${esc(u.city || "")}${u.accountType ? " · " + esc(u.accountType) : ""}</p>
       <div class="ph-ints">${chips}</div>
+      ${old ? diffChips(old, u, ["interests"]) : ""}
       <div class="ph-grid">${posts.map((p) => tile(p)).join("") || '<p class="ph-empty-sm">No posts yet</p>'}</div>
     </div>`;
   }
@@ -109,10 +128,10 @@
         body += changedPosts.map((p) => {
           const o = before.posts.find((x) => x.caption === p.caption) || {};
           const d = typeof p.likes === "number" && typeof o.likes === "number" ? p.likes - o.likes : 0;
-          return feedCard(p, state, { cls: "changed", delta: d ? `<span class="ph-delta">${d > 0 ? "+" : ""}${d}</span>` : "" });
+          return feedCard(p, state, { cls: "changed", delta: d ? `<span class="ph-delta">${d > 0 ? "+" : ""}${d}</span>` : "", diff: diffChips(o, p, ["likes"]) });
         }).join("");
       }
-      if (changedUsers.length) body += `<div class="ph-banner ok">${changedUsers.length} account${changedUsers.length === 1 ? "" : "s"} updated</div><ul class="ph-people">${changedUsers.map((u) => personRow(u)).join("")}</ul>`;
+      if (changedUsers.length) body += `<div class="ph-banner ok">${changedUsers.length} account${changedUsers.length === 1 ? "" : "s"} updated</div><ul class="ph-people">${changedUsers.map((u) => personRow(u, null, diffChips(userOf(before, u.username), u))).join("")}</ul>`;
       return { tab: "home", title: spec.title || "Updated", body };
     }
     // ---- reads ----

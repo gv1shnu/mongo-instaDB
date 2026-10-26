@@ -1,5 +1,5 @@
 (function () {
-  const E = window.InstaEngine, STORY = window.STORY, SEED = window.SEED, assemble = window.assemble, canonical = window.canonical;
+  const E = window.InstaEngine, STORY = window.STORY, SEED = window.SEED, assemble = window.assemble, canonical = window.canonical, stepNow = window.stepNow;
   const steps = STORY.steps;
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -11,11 +11,11 @@
   // database state before each step, following the canonical story
   const states = [SEED];
   steps.forEach((st, i) => {
-    const r = E.run(canonical(st), states[i]);
+    const r = E.run(canonical(st), states[i], { now: stepNow(st) });
     states.push(r.ok ? r.state : states[i]);
   });
 
-  const KEY = "instadb-story-v2";
+  const KEY = "instadb-story-v3";
   let progress = { step: 0, revealed: [] };
   try { const saved = JSON.parse(localStorage.getItem(KEY)); if (saved && Number.isInteger(saved.step) && saved.step <= steps.length) progress = saved; } catch (e) {}
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(progress)); } catch (e) {} };
@@ -27,7 +27,7 @@
       if (typeof p === "string") return esc(p);
       const i = bi++;
       if (mode === "done") return `<span class="filled">${esc(p.b)}</span>`;
-      return `<input class="blank" data-i="${i}" size="5" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="operator blank ${i + 1}">`;
+      return `<input class="blank" data-i="${i}" size="5" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="blank ${i + 1}">`;
     }).join("");
   }
   const doneCodeHTML = (st) => (isWrite(st) ? `<span class="filled">${esc(st.answer)}</span>` : blankCodeHTML(st, "done"));
@@ -62,7 +62,7 @@
       const end = states[steps.length];
       cur.innerHTML = `<div class="card finale">
         <h2>That's the day on instaDB 🌙</h2>
-        <p>You created a user and her posts, read profiles, filtered with comparison and logical operators, paged through a sorted feed, updated documents and cleaned up. instaDB ends the day with <b>${end.users.length} users</b> and <b>${end.posts.length} posts</b>.</p>
+        <p>You created a user and her posts, read profiles, filtered with comparison, logical, regex and array operators, paged through a sorted feed, changed fields and arrays with update operators, replaced a whole document and cleaned up. instaDB ends the day with <b>${end.users.length} users</b> and <b>${end.posts.length} posts</b>.</p>
         <p class="muted">${progress.revealed.length ? `You used "Show answer" on ${progress.revealed.length} step${progress.revealed.length > 1 ? "s" : ""}. Restart the day and try those again without it.` : "You solved every step without revealing an answer."}</p>
         <button class="btn primary" id="again">Restart the day</button>
       </div>`;
@@ -129,7 +129,8 @@
     $("data-count").textContent = `(${st.users.length} users · ${st.posts.length} posts)`;
     const table = (id, name, docs) => {
       const cols = [...new Set(docs.flatMap((d) => Object.keys(d)))];
-      const fmt = (v) => v instanceof Date ? v.toISOString().slice(0, 10) : v instanceof E.ObjectId ? "ObjectId(…" + String(v).slice(-4) + ")"
+      const fmt = (v) => v instanceof Date ? (v.getUTCHours() || v.getUTCMinutes() ? v.toISOString().slice(0, 16).replace("T", " ") : v.toISOString().slice(0, 10))
+        : v instanceof E.ObjectId ? "ObjectId(…" + String(v).slice(-4) + ")" : v instanceof E.Timestamp ? String(v)
         : Array.isArray(v) ? "[" + v.map((x) => JSON.stringify(x)).join(", ") + "]" : typeof v === "string" ? v : String(v);
       const cell = (v) => (v === undefined ? '<td class="missing">—</td>' : `<td>${esc(fmt(v))}</td>`);
       $(id).innerHTML = `<caption>${name}</caption><thead><tr>${cols.map((c) => `<th>${c}</th>`).join("")}</tr></thead>
@@ -208,12 +209,12 @@
       right = vals.map((v, k) => norm(v) === norm(want[k]));
       inputs.forEach((inp, k) => { inp.classList.toggle("ok", right[k]); inp.classList.toggle("bad", !right[k]); });
     }
-    const res = E.run(code, states[i]);
+    const res = E.run(code, states[i], { now: stepNow(st) });
     terminal(code.trim(), res, states[i]);
     phone({ res, before: states[i], after: res.ok ? res.state : null, spec: st.screen });
 
     if (isWrite(st)) {
-      const want = E.run(canonical(st), states[i]);
+      const want = E.run(canonical(st), states[i], { now: stepNow(st) });
       const ok = res.ok && E.fingerprint(res, ordered(st)) === E.fingerprint(want, ordered(st));
       $("editor").classList.toggle("ok", ok); $("editor").classList.toggle("bad", !ok);
       if (ok) return advance();
@@ -225,7 +226,7 @@
     const vals = [...document.querySelectorAll("#current .blank")].map((x) => x.value);
     const wrongIdx = right.map((r, k) => (r ? -1 : k)).filter((k) => k >= 0);
     let tip = res.ok ? "The query ran, but it isn't the one this step needs. Compare the phone and the terminal with what the story asks for." : "MongoDB rejected the query. Read the error in the terminal below.";
-    if (wrongIdx.some((k) => !norm(vals[k]).startsWith("$"))) tip = "Operators always start with <code>$</code>.";
+    if (wrongIdx.some((k) => norm(want[k]).startsWith("$") && !norm(vals[k]).startsWith("$"))) tip = "Operators always start with <code>$</code>.";
     feedback("bad", wrongIdx.length === 1 ? "Not quite: one blank is off" : `Not quite: ${wrongIdx.length} blanks are off`, tip);
   }
 

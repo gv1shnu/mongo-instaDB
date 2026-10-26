@@ -1,8 +1,8 @@
 # One Day on instaDB
 
-A story-driven, fill-in-the-blank walkthrough of MongoDB CRUD and query operators (Lecture 2), built on the instaDB seed data used in the lab.
+A story-driven, fill-in-the-blank walkthrough of MongoDB CRUD (Lecture 2) and query and update operators (Lecture 3), built on the instaDB seed data used in the lab.
 
-Students follow instaDB through one day in 17 steps. A new user, Meera, signs up at 7 a.m., and her account and posts carry through the rest of the day.
+Students follow instaDB through one day in 35 steps. A new user, Meera, signs up at 7 a.m., and her account and posts carry through the rest of the day.
 
 - **✍️ Write steps (CRUD + cursor):** students type the whole query from scratch. It's checked by running it and comparing the result with the expected one, so equivalent answers pass (fields in any order, cursor calls chained in any order).
 - **🧩 Operator steps:** the query is given and students fill in the `$` operators.
@@ -12,15 +12,18 @@ A phone-style preview beside the code re-renders the app from whatever the query
 **Covers:**
 - **Create:** `insertOne`, `insertMany`
 - **Read:** `find`, `findOne`, `sort`, `skip`, `limit`
-- **Update:** `updateOne`, `updateMany`, `$set`, `$inc`, `$push`, `$each`
+- **Update:** `updateOne`, `updateMany`, `replaceOne`
 - **Delete:** `deleteOne`, `deleteMany`
 - **Comparison:** `$eq`, `$ne`, `$gt`, `$gte`, `$lt`, `$lte`, `$in`, `$nin`
-- **Logical:** `$and`, `$or`, `$not`, `$nor`
+- **Logical:** `$and`, `$or`, `$not`, `$nor`, `$exists`
+- **Regex and arrays:** `$regex`, `$options`, `$all`, `$elemMatch`
+- **Field updates:** `$set`, `$unset`, `$rename`, `$inc`, `$mul`, `$min`, `$max`, `$currentDate` (Date and timestamp)
+- **Array updates:** `$push` with `$each`, `$sort`, `$slice`; `$addToSet`, `$pop`, `$pull`, `$pullAll`, positional `$`
 
 ## How it works
 
-- No server, no database, no install. A small query engine (`js/engine.js`) runs MongoDB-style queries in the browser with MongoDB's behaviour for the cases in the lab: missing fields with `$ne`/`$not`, matching inside arrays, and sort → skip → limit order.
-- `js/phone.js` draws the preview: profile grids, Explore, people lists, ranked feeds, update highlights (+100 likes, new interests, "just verified") and deleted posts.
+- No server, no database, no install. A small query engine (`js/engine.js`) runs MongoDB-style queries in the browser with MongoDB's behaviour for the cases in the lab: missing fields with `$ne`/`$not`, matching inside arrays, and sort → skip → limit order. `$currentDate` uses the time on each step's phone screen, so answers can be checked.
+- `js/phone.js` draws the preview: profile grids, Explore, people lists, ranked feeds, update highlights (+100 likes, added/removed interests, added/removed/changed fields, "just verified") and deleted posts.
 - Write steps are checked by result; operator blanks are checked by their text. Every query is also run, and its output is shown in a mongosh-style terminal, including real error messages for mistakes such as unknown operators.
 - Progress is saved in the student's browser (localStorage). Nothing is collected or graded.
 

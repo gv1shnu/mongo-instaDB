@@ -44,10 +44,59 @@ t('db.posts.find({ likes: { gt: 5 } })', 0);
 t('db.posts.findone({})', "TypeError: db.posts.findone is not a function. Check the method name (spelling and capitals matter).");
 t('db.posts.find({ $gt: 5 })', "MongoServerError: $gt goes inside a field, e.g. { likes: { $gt: ... } }");
 t('db.post.find({})', "MongoServerError: there is no 'post' collection in instaDB (try users or posts)");
-t('db.posts.updateOne({}, { likes: 5 })', "MongoServerError: Update document requires atomic operators (like $set, $inc, $push)");
+t('db.posts.updateOne({}, { likes: 5 })', "MongoServerError: Update document requires atomic operators (like $set, $inc, $push). To swap the whole document, use replaceOne.");
 t('db.posts.find({ likes: { $gt: 5000 } );', "SyntaxError: the query isn't valid JavaScript. Check brackets, commas and quotes.");
 t('db.posts.find({ likes: { $in: 5 } })', "MongoServerError: $in needs an array");
 t('db.users.find({ age: { $not: 25 } })', "MongoServerError: $not needs an operator expression, e.g. { $not: { $gt: 25 } }");
+// Lecture 3: query operators
+t('db.users.find({ age: { $exists: false } })', ["rohan_travels"], (v) => v.map((d) => d.username));
+t('db.users.find({ accountType: { $exists: true } })', 6);
+t('db.users.find({ interests: { $all: ["travel", "photography"] } })', 2);
+t('db.users.find({ interests: { $all: [] } })', 0);
+t('db.posts.find({ hashtags: { $elemMatch: { $in: ["#food", "#fitness"] } } })', 3);
+t('db.posts.find({ likes: { $elemMatch: { $gt: 5 } } })', 0);
+t('db.users.find({ username: { $regex: /^r/ } })', 2);
+t('db.users.find({ username: { $regex: "^R" } })', 0);
+t('db.users.find({ username: { $regex: "^R", $options: "i" } })', 2);
+t('db.users.find({ username: /^R/i })', 2);
+t('db.users.find({ username: { $not: /^r/ } })', 6);
+t('db.posts.find({ hashtags: /^#b/ })', 2);
+t('db.users.find({ username: { $options: "i" } })', "MongoServerError: $options needs a $regex next to it");
+t('db.users.find({ username: { $regex: /a/, $options: "z" } })', "MongoServerError: invalid flag in regex options: z (use i, m, s or x)");
+// Lecture 3: update operators
+const doc = (code, name, fn) => { const r = run(code, S, { now: new Date("2026-10-26T10:00:00Z") }); return r.ok ? fn(r.state.users.find((u) => u.username === name) || r.state.posts.find((p) => p.caption === name)) : r.error; };
+const td = (label, code, name, fn, exp) => { const got = doc(code, name, fn); const ok = JSON.stringify(got) === JSON.stringify(exp); if (!ok) fail++; console.log((ok ? "ok  " : "FAIL") + "  " + label + "  =>  " + JSON.stringify(got) + (ok ? "" : "  expected " + JSON.stringify(exp))); };
+td("$unset removes the field", 'db.users.updateOne({ username: "neha_eats" }, { $unset: { age: "" } })', "neha_eats", (u) => "age" in u, false);
+td("$rename moves the value", 'db.users.updateOne({ username: "neha_eats" }, { $rename: { name: "fullName" } })', "neha_eats", (u) => [u.name, u.fullName], [undefined, "Neha Kapoor"]);
+td("$mul multiplies", 'db.users.updateOne({ username: "neha_eats" }, { $mul: { followers: 2 } })', "neha_eats", (u) => u.followers, 6200);
+td("$mul on a missing field sets 0", 'db.users.updateOne({ username: "neha_eats" }, { $mul: { score: 3 } })', "neha_eats", (u) => u.score, 0);
+td("$min lowers", 'db.users.updateOne({ username: "neha_eats" }, { $min: { followers: 100 } })', "neha_eats", (u) => u.followers, 100);
+td("$min keeps a smaller value", 'db.users.updateOne({ username: "neha_eats" }, { $min: { followers: 9999 } })', "neha_eats", (u) => u.followers, 3100);
+td("$max raises", 'db.users.updateOne({ username: "neha_eats" }, { $max: { followers: 9999 } })', "neha_eats", (u) => u.followers, 9999);
+td("$max sets a missing field", 'db.users.updateOne({ username: "rohan_travels" }, { $max: { age: 30 } })', "rohan_travels", (u) => u.age, 30);
+td("$currentDate true = Date", 'db.users.updateOne({ username: "neha_eats" }, { $currentDate: { seen: true } })', "neha_eats", (u) => u.seen.toISOString(), "2026-10-26T10:00:00.000Z");
+td("$currentDate timestamp", 'db.users.updateOne({ username: "neha_eats" }, { $currentDate: { seen: { $type: "timestamp" } } })', "neha_eats", (u) => String(u.seen), "Timestamp({ t: 1793008800, i: 1 })");
+td("$addToSet skips duplicates", 'db.users.updateOne({ username: "neha_eats" }, { $addToSet: { interests: "food" } })', "neha_eats", (u) => u.interests, ["food", "travel"]);
+td("$addToSet with $each", 'db.users.updateOne({ username: "neha_eats" }, { $addToSet: { interests: { $each: ["food", "cafes"] } } })', "neha_eats", (u) => u.interests, ["food", "travel", "cafes"]);
+td("$pop 1 removes the last", 'db.users.updateOne({ username: "neha_eats" }, { $pop: { interests: 1 } })', "neha_eats", (u) => u.interests, ["food"]);
+td("$pop -1 removes the first", 'db.users.updateOne({ username: "neha_eats" }, { $pop: { interests: -1 } })', "neha_eats", (u) => u.interests, ["travel"]);
+td("$pull removes a value", 'db.users.updateOne({ username: "neha_eats" }, { $pull: { interests: "food" } })', "neha_eats", (u) => u.interests, ["travel"]);
+td("$pull with a condition", 'db.users.updateOne({ username: "neha_eats" }, { $pull: { interests: { $in: ["food", "travel"] } } })', "neha_eats", (u) => u.interests, []);
+td("$pullAll removes a list", 'db.users.updateOne({ username: "rohan_travels" }, { $pullAll: { interests: ["travel", "photography"] } })', "rohan_travels", (u) => u.interests, []);
+td("$push $each $sort $slice", 'db.users.updateOne({ username: "neha_eats" }, { $push: { interests: { $each: ["baking", "art"], $sort: 1, $slice: 3 } } })', "neha_eats", (u) => u.interests, ["art", "baking", "food"]);
+td("$push negative $slice keeps the end", 'db.users.updateOne({ username: "neha_eats" }, { $push: { interests: { $each: ["x"], $slice: -2 } } })', "neha_eats", (u) => u.interests, ["travel", "x"]);
+td("positional $ from the filter", 'db.users.updateOne({ username: "neha_eats", interests: "travel" }, { $set: { "interests.$": "trips" } })', "neha_eats", (u) => u.interests, ["food", "trips"]);
+td("positional $ with a numeric path (lecture style)", 'db.users.updateOne({ username: "neha_eats", "interests.0": { $exists: true } }, { $set: { "interests.$": "eating" } })', "neha_eats", (u) => u.interests, ["eating", "travel"]);
+t('db.users.updateOne({ username: "neha_eats" }, { $set: { "interests.$": "x" } })', "MongoServerError: The positional operator did not find the match needed from the query.");
+t('db.users.updateOne({ username: "neha_eats" }, { $pop: { interests: 2 } })', "MongoServerError: $pop takes 1 (remove the last item) or -1 (remove the first item)");
+t('db.users.updateOne({ username: "neha_eats" }, { $push: { interests: { $sort: 1 } } })', "MongoServerError: $push modifiers need $each with an array, e.g. { $each: [ ... ] }");
+t('db.users.updateOne({ username: "neha_eats" }, { $rename: { age: 5 } })', "MongoServerError: $rename needs the new field name as text, e.g. { $rename: { age: \"newName\" } }");
+// replaceOne
+td("replaceOne keeps only the new fields", 'db.users.replaceOne({ username: "neha_eats" }, { username: "neha_eats", followers: 1 })', "neha_eats", (u) => Object.keys(u), ["username", "followers"]);
+{ const r = run('db.users.replaceOne({ username: "meera" }, { username: "meera" })', S); const ok = r.ok && r.value.matchedCount === 0; if (!ok) fail++; console.log((ok ? "ok  " : "FAIL") + "  replaceOne with no match changes nothing"); }
+{ const r = run('db.users.insertOne({ username: "m" })', S); const r2 = run('db.users.replaceOne({ username: "m" }, { username: "m2" })', r.state);
+  const ok = r2.ok && String(r2.state.users[8]._id) === String(r.value.insertedId) && r2.state.users[8].username === "m2"; if (!ok) fail++; console.log((ok ? "ok  " : "FAIL") + "  replaceOne keeps _id"); }
+t('db.users.replaceOne({ username: "neha_eats" }, { $set: { age: 1 } })', "MongoServerError: Replacement document must not contain atomic operators (found $set). To change only some fields, use updateOne.");
 // inserts & statements
 t('db.users.insertOne({ username: "x", followers: 0 })', true, v => v.acknowledged && String(v.insertedId).startsWith("6720"));
 t('db.posts.insertMany([{ caption: "a" }, { caption: "b" }])', 2, v => Object.keys(v.insertedIds).length);
