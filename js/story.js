@@ -176,13 +176,14 @@
         chapter: "campaign", op: "$not", mode: "predict", trap: true,
         screen: { time: "15:00", title: "Youth program", field: "age" },
         before: "3 p.m. A youth program is looking for users aged 25 or younger." +
-          task("The query below finds users whose age is <b>not greater than 25</b>. It returns 7 users, but <code>{ age: { $lte: 25 } }</code> returns only 6. <b>Predict: who is the extra user?</b>"),
+          task("These are all 9 users and their <code>age</code>. One of them has no <code>age</code> field at all. The query below asks for users whose age is <b>not greater than 25</b>. It returns 7 users, but <code>{ age: { $lte: 25 } }</code> returns only 6. <b>Predict: who is the extra user?</b>") +
+          pre("riya_codes     21      kabir.fit      27      sara.draws     26\narjun.clicks   24      ananya.reads   17      meera.dance    20\nneha_eats      19      dev_memes      22      rohan_travels  (no age field)"),
         query: "db.users.find({ age: { $not: { $gt: 25 } } })",
         options: [
-          { text: "kabir.fit, who is 27", why: "27 is greater than 25, so $not { $gt: 25 } leaves Kabir out, just like $lte does." },
-          { text: "rohan_travels, who has no age on file", ok: true },
-          { text: "sara.draws, who is 26", why: "26 is greater than 25, so both queries leave Sara out." },
-          { text: "meera.dance, who is 20", why: "20 isn't greater than 25, and it is at most 25, so Meera is in both lists." },
+          { text: "kabir.fit", why: "Kabir is 27, which is greater than 25, so $not { $gt: 25 } leaves him out, just like $lte does." },
+          { text: "rohan_travels", ok: true },
+          { text: "sara.draws", why: "Sara is 26, which is greater than 25, so both queries leave her out." },
+          { text: "meera.dance", why: "Meera is 20: not greater than 25, and also at most 25, so she's in both lists." },
         ],
         hint: "Which user can't be \"greater than 25\" because there's nothing to compare?",
         after: "Seven users, Meera included. { age: { $lte: 25 } } gives six. The extra one is <b>rohan_travels</b>, who has no age on file.",

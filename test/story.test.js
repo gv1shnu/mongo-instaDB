@@ -78,5 +78,21 @@ STORY.steps.forEach((st, i) => {
     });
   }
 });
+// Every question stands on its own: an option may not bring in a fact the question doesn't give.
+// Any username in an option must appear in the question; so must any number or quoted value in a
+// prediction's text.
+const people = new Set(states[states.length - 1].users.concat(globalThis.SEED.users).map((u) => u.username));
+STORY.steps.forEach((st, i) => {
+  const stem = st.before.replace(/<[^>]+>/g, " ").replace(/&quot;/g, '"') + " " + (st.code ? globalThis.assemble(st.code.map((p) => (typeof p === "string" ? p : { b: "" }))) : "") + " " + (st.broken || "") + " " + (st.query || "");
+  (st.options || []).forEach((o, k) => {
+    const text = o.text || o.code;
+    const missing = [...people].filter((u) => text.includes(u) && !stem.includes(u));
+    if (o.text) {
+      (o.text.match(/\d+(?:,\d{3})*/g) || []).forEach((n) => { if (!stem.includes(n)) missing.push(n); });
+      (o.text.match(/"[^"]+"/g) || []).forEach((q) => { if (!stem.includes(q)) missing.push(q); });
+    }
+    if (missing.length) { fail++; console.log(`FAIL  step ${i + 1} option ${"ABCD"[k]} brings in ${missing.join(", ")}, which the question doesn't give`); }
+  });
+});
 console.log(fail ? fail + " PROBLEMS" : "STORY OK");
 process.exit(fail ? 1 : 0);
