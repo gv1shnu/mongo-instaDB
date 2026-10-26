@@ -151,7 +151,7 @@
         chapter: "campaign", op: "$ne", mode: "predict", trap: true,
         screen: { time: "14:40", title: "Creator invites", field: "accountType" },
         before: "2:40 p.m. The growth team sends a \"Become a creator\" invite to everyone who isn't a creator yet." +
-          task("The query below finds users whose <code>accountType</code> is <b>not equal to</b> \"creator\". There are 9 users and 4 creators. <b>Predict: who gets the invite?</b>"),
+          task("There are <b>9 users</b>: 4 have <code>accountType: \"creator\"</code>, 3 have <code>\"personal\"</code> or <code>\"business\"</code> (neha_eats, kabir.fit, ananya.reads), and 2 have <b>no accountType field at all</b> (sara.draws, rohan_travels). The query below asks for users whose <code>accountType</code> is not \"creator\". <b>Predict: who gets the invite?</b>"),
         query: 'db.users.find({ accountType: { $ne: "creator" } })',
         options: [
           { text: "Only the 3 users whose accountType is \"personal\" or \"business\": neha_eats, kabir.fit, ananya.reads", why: "That's what most people expect. But $ne also matches documents that don't have the field at all." },
@@ -182,7 +182,7 @@
           { text: "kabir.fit, who is 27", why: "27 is greater than 25, so $not { $gt: 25 } leaves Kabir out, just like $lte does." },
           { text: "rohan_travels, who has no age on file", ok: true },
           { text: "sara.draws, who is 26", why: "26 is greater than 25, so both queries leave Sara out." },
-          { text: "meera.dance, who joined this morning", why: "Meera is 20, so she's in both lists." },
+          { text: "meera.dance, who is 20", why: "20 isn't greater than 25, and it is at most 25, so Meera is in both lists." },
         ],
         hint: "Which user can't be \"greater than 25\" because there's nothing to compare?",
         after: "Seven users, Meera included. { age: { $lte: 25 } } gives six. The extra one is <b>rohan_travels</b>, who has no age on file.",

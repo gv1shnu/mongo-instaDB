@@ -45,6 +45,8 @@
 }
 
 * { box-sizing: border-box; }
+/* "hidden" always wins, even over rules like .actions { display: flex } */
+[hidden] { display: none !important; }
 html, body { margin: 0; }
 body { background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 16px; line-height: 1.5; }
 .wrap { max-width: 1180px; margin: 0 auto; padding: 0 16px; }
@@ -413,3 +415,4 @@ div.before.big { margin: 8px 0 16px; }
 @media (prefers-color-scheme: dark) { .timer.low { color: var(--amber); } }
 @keyframes timerPulse { 50% { opacity: .55; } }
 @media (prefers-reduced-motion: reduce) { .timer.urgent { animation: none; } }
+.auto-next { margin: 10px 0 0; font-size: 14px; color: var(--ink-2); }

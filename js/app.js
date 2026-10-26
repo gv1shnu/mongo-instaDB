@@ -126,6 +126,7 @@
 
   function render() {
     stopTimer();
+    stopAutoNext();
     const s = progress.at;
     if (s === 0) renderIntro();
     else if (gated()) renderGate();
@@ -174,7 +175,7 @@
     <ul>
       <li><b>One try per slide.</b> Pick or type your answer, then press <b>Submit</b>. It locks after that.</li>
       <li><b>${POINTS} points</b> for each right answer, <b>${POINTS - HINT_COST}</b> if you used the hint, <b>0</b> if it's wrong. ${N} slides, ${MAX} points.</li>
-      <li><b>Every slide has a timer:</b> ${TIME.write} s to write a query, ${TIME.pick} s to fill in a blank, ${TIME.choice} s for a multiple-choice question. When it runs out, whatever you've picked or typed is submitted; if nothing, the slide counts as wrong. Leaving the slide or reloading doesn't stop it.</li>
+      <li><b>Every slide has a timer:</b> ${TIME.write} s to write a query, ${TIME.pick} s to fill in a blank, ${TIME.choice} s for a multiple-choice question. When it runs out, whatever you've picked or typed is submitted (if nothing, the slide counts as wrong) and you move on to the next slide. Leaving the slide or reloading doesn't stop it.</li>
       <li><b>Solutions come at the end.</b> You'll see every answer, why it's right, and where you stand on the class leaderboard once all ${N} slides are answered.</li>
     </ul></div>`;
 
@@ -248,7 +249,7 @@
     const pts = a ? `<span class="tag ${a.ok ? "pts-ok" : "pts-bad"}">${a.ok ? `+${pointsFor(i)}` : "0"} points</span>` : "";
     // the topic tag (e.g. "insertOne()") names the answer, so it only appears once the exam is done
     $("slide").innerHTML = `<div class="eyebrow">${esc(plainTitle(chapterOf(st).title))}</div>
-      <div class="step-meta"><span class="num">${i + 1}</span><span class="tag mode-${st.mode}">${icon} ${label}</span>${finished() ? `<span class="tag">${esc(st.op)}</span>` : ""}${st.trap ? '<span class="tag warn">⚠️ predict first</span>' : ""}${hinted(i) ? '<span class="tag hint-used">hint used</span>' : ""}${pts}${a ? "" : '<span class="timer" id="timer" role="timer" aria-live="off"></span>'}</div>
+      <div class="step-meta"><span class="num">${i + 1}</span><span class="tag mode-${st.mode}">${icon} ${label}</span>${finished() ? `<span class="tag">${esc(st.op)}</span>` : ""}${st.trap && !a ? '<span class="tag warn">⚠️ predict first</span>' : ""}${hinted(i) ? '<span class="tag hint-used">hint used</span>' : ""}${pts}${a ? "" : '<span class="timer" id="timer" role="timer" aria-live="off"></span>'}</div>
       <div class="before big">${st.before}</div>
       <div id="widget"></div>
       <div class="hint-box" id="hint-box" ${hinted(i) ? "" : "hidden"}><b>Hint:</b> ${esc(st.hint)}</div>
@@ -294,13 +295,28 @@
     stopTimer();
     if (answer(i) || progress.at !== i + 1) return;
     const st = steps[i];
-    if (WIDGETS[st.mode].value(i) != null) return submit(i, true);
-    progress.answers[i] = { ok: false, given: TIMEOUT, sel: null, timeout: true };
-    save();
-    record(i, "timeout", "");
-    ui = {};
-    renderStep(i);
-    renderNav(); renderProgress(); renderAccount();
+    if (WIDGETS[st.mode].value(i) != null) submit(i, true);
+    else {
+      progress.answers[i] = { ok: false, given: TIMEOUT, sel: null, timeout: true };
+      save();
+      record(i, "timeout", "");
+      ui = {};
+      renderStep(i);
+      renderNav(); renderProgress(); renderAccount();
+    }
+    autoNext(i);
+  }
+  // after a time-out, show the result for a moment, then move on by itself
+  let autoTimer = null;
+  const stopAutoNext = () => { clearInterval(autoTimer); autoTimer = null; };
+  function autoNext(i) {
+    let n = 3;
+    $("feedback").insertAdjacentHTML("beforeend", `<p class="auto-next">Moving to ${i + 1 < N ? "the next slide" : "your results"} in <b id="auto-n">${n}</b> s…</p>`);
+    autoTimer = setInterval(() => {
+      n--;
+      if ($("auto-n")) $("auto-n").textContent = n;
+      if (n <= 0) { stopAutoNext(); if (progress.at === i + 1) next(); }
+    }, 1000);
   }
   // the widget calls this whenever the selection changes
   const selectionChanged = (i) => { if ($("submit")) $("submit").disabled = WIDGETS[steps[i].mode].value(i) == null; };
