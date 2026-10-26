@@ -10,7 +10,7 @@
   const steps = STORY.steps, N = steps.length, LAST = N + 1;
   const POINTS = 10, HINT_COST = 5, MAX = POINTS * N;
   // seconds per slide; when they run out, the current selection is submitted (or the slide counts as wrong)
-  const TIME = { write: 90, pick: 45, choice: 60, bug: 60, predict: 60 };
+  const TIME = { write: 120, pick: 60, choice: 65, bug: 65, predict: 65 }; // worst case for all 24: 29 min 35 s
   const TIMEOUT = "(no answer: time ran out)";
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));

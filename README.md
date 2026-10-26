@@ -19,7 +19,7 @@ Every option is a real query: what the student submits runs on the data and show
 **Exam rules**
 - **One try per slide.** The student picks or types an answer and presses **Submit**; the slide then locks with ✓ or ✗. Next unlocks once the slide is answered, and slides can't be skipped.
 - **Points:** 10 for a right answer, 5 if the slide's hint was used, 0 if wrong. 24 slides, 240 points.
-- **A timer on every slide:** 90 s for a write slide, 45 s for a fill-in-the-blank, 60 s for an MCQ (at most about 23½ minutes for all 24). When it runs out, whatever the student has selected or typed is submitted; with nothing selected, the slide counts as wrong. The deadline is set when the slide first opens, so going back or reloading doesn't reset it. Change the times in `TIME` at the top of `js/app.js`.
+- **A timer on every slide:** 2 min for a write slide, 1 min for a fill-in-the-blank, 65 s for an MCQ (at most 29 min 35 s for all 24). When it runs out, whatever the student has selected or typed is submitted; with nothing selected, the slide counts as wrong. The deadline is set when the slide first opens, so going back or reloading doesn't reset it. Change the times in `TIME` at the top of `js/app.js`.
 - **No solutions until the end.** While the exam is in progress, a wrong answer only says it's wrong. Once all 24 slides are answered, the results slide shows:
   - the score
   - a breakdown by question type and by part of the day
