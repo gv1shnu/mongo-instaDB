@@ -82,22 +82,24 @@ expect("junk slide numbers are ignored", post(Object.assign({ idToken: "good" },
 post(Object.assign({ idToken: "evil", events: [{ slide: 0, kind: "wrong", answer: "=IMPORTXML(1)" }] }, base));
 expect("text that looks like a formula is stored as text", [sheets.Scores.rows.at(-1)[0], sheets.Scores.rows.at(-1)[1], sheets.Attempts.rows.at(-1)[5]], ["'=cmd@nst.rishihood.edu.in", "'=HYPERLINK(\"x\")", "'=IMPORTXML(1)"]);
 
-// tab switches, copy and paste
+// tab and window switches
 const SCORES_OLD_HEADERS = ["Email", "Name", "Score", "Out of", "Solved", "First try", "Answers shown", "Wrong tries", "Current slide", "Finished", "First seen", "Last update", "Solved slides", "Shown slides"];
 const act = (a, events) => post(Object.assign({ idToken: "teacher", events }, base, { activity: a }));
 const teacherRow = () => sheets.Scores.rows.find((x) => x[0] === "vishnu@rishihood.edu.in");
-act({ tabs: 3, away: 40, copies: 2, pastes: 1 }, [{ slide: 4, op: "$gt", kind: "left tab", answer: "away 12 s" }, { slide: -1, op: "intro", kind: "paste", answer: "pasted 5 chars" }]);
-expect("activity columns", teacherRow().slice(14, 18), [3, 40, 2, 1]);
-expect("column titles", sheets.Scores.rows[0].slice(14), ["Tab switches", "Time away (s)", "Copies", "Pastes"]);
-act({ tabs: 0, away: 0, copies: 0, pastes: 0 });
-expect("a restart can't lower the counts", teacherRow().slice(14, 18), [3, 40, 2, 1]);
-act({ tabs: 5, away: "x", copies: -4, pastes: 9 });
-expect("counts go up, junk is ignored", teacherRow().slice(14, 18), [5, 40, 2, 9]);
+act({ tabs: 3, away: 40 }, [{ slide: 4, op: "$gt", kind: "left tab", answer: "away 12 s" }, { slide: -1, op: "intro", kind: "left window", answer: "away 4 s" }]);
+expect("activity columns", teacherRow().slice(14), [3, 40]);
+expect("column titles", sheets.Scores.rows[0].slice(14), ["Tab switches", "Time away (s)"]);
+act({ tabs: 0, away: 0 });
+expect("a restart can't lower the counts", teacherRow().slice(14), [3, 40]);
+act({ tabs: 5, away: "x", copies: 7 });
+expect("counts go up, junk is ignored", teacherRow().slice(14), [5, 40]);
 const logged = sheets.Attempts.rows.slice(-2).map((x) => [x[2], x[4], x[5]]);
-expect("tab switch and paste are logged (intro is slide 0)", logged, [[5, "left tab", "away 12 s"], [0, "paste", "pasted 5 chars"]]);
+expect("tab and window switches are logged (intro is slide 0)", logged, [[5, "left tab", "away 12 s"], [0, "left window", "away 4 s"]]);
+act({ tabs: 5, away: 40 }, [{ slide: 0, kind: "paste", answer: "x" }]);
+expect("copy/paste events are no longer a kind of their own", sheets.Attempts.rows.at(-1)[4], "other");
 { const old = fakeSheet("Scores"); old.rows.push(SCORES_OLD_HEADERS, ["x@nst.rishihood.edu.in"]); sheets.Scores = old; }
-act({ tabs: 1, away: 1, copies: 1, pastes: 1 });
-expect("an older Scores sheet gets the new column titles", sheets.Scores.rows[0].length, 18);
+act({ tabs: 1, away: 1 });
+expect("an older Scores sheet gets the new column titles", sheets.Scores.rows[0].length, 16);
 
 expect("teacher's @rishihood.edu.in account is accepted", post(Object.assign({ idToken: "teacher" }, base)).ok, true);
 expect("student whose Workspace domain is rishihood.edu.in is accepted", post(Object.assign({ idToken: "sameOrg" }, base)).ok, true);

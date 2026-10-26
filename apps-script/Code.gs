@@ -6,7 +6,7 @@
  * accounts from the university's email domains, and writes:
  *   - "Scores":   one row per student, updated in place
  *   - "Attempts": one row per answer (right, wrong, or "Show answer"), and per
- *                 tab switch, copy or paste
+ *                 tab or window switch
  *
  * Setup: see "Score tracking" in the project README.
  */
@@ -23,9 +23,9 @@ const SETTINGS = {
 
 const SCORES_HEADERS = ["Email", "Name", "Score", "Out of", "Solved", "First try", "Answers shown", "Wrong tries",
   "Current slide", "Finished", "First seen", "Last update", "Solved slides", "Shown slides",
-  "Tab switches", "Time away (s)", "Copies", "Pastes"];
-const ACTIVITY_COL = 15; // first of the four activity columns
-const ACTIVITY_KINDS = ["left tab", "left window", "copy", "paste"];
+  "Tab switches", "Time away (s)"];
+const ACTIVITY_COL = 15; // first of the two activity columns
+const ACTIVITY_KINDS = ["left tab", "left window"];
 const ATTEMPTS_HEADERS = ["Time", "Email", "Slide", "Topic", "Result", "Answer given", "Event id"];
 
 function doGet() {
@@ -100,7 +100,7 @@ function summarize_(body) {
     wrong: wrong,
     at: at,
     finished: solved.length === outOf,
-    activity: ["tabs", "away", "copies", "pastes"].map((k) => Math.max(0, Math.min(1e6, parseInt((body.activity || {})[k], 10) || 0))),
+    activity: ["tabs", "away"].map((k) => Math.max(0, Math.min(1e6, parseInt((body.activity || {})[k], 10) || 0))),
   };
 }
 

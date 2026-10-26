@@ -28,7 +28,7 @@
   // plus one for whoever hasn't signed in.
   const BASE_KEY = "instadb-deck-v1";
   let key = BASE_KEY;
-  const fresh = () => ({ at: 0, solved: [], tried: [], revealed: [], firstTry: [], wrong: {}, activity: { tabs: 0, away: 0, copies: 0, pastes: 0 } });
+  const fresh = () => ({ at: 0, solved: [], tried: [], revealed: [], firstTry: [], wrong: {}, activity: { tabs: 0, away: 0 } });
   function load(k) {
     try {
       const saved = JSON.parse(localStorage.getItem(k));
@@ -158,10 +158,10 @@
     if (!Score.enabled) return "";
     const u = Score.user;
     if (u) return `<div class="signin-panel ok"><b>Signed in as ${esc(u.email)}.</b> Your score is saved to the class sheet after every answer.
-      <span class="muted small">Switching tabs or windows, and copying or pasting, are recorded with your score.</span>
+      <span class="muted small">Switching tabs or windows is recorded with your score.</span>
       <span class="muted" id="signin-detail">${esc(Score.detail)}</span></div>`;
     return `<div class="signin-panel"><b>Sign in with your university Google account</b> (${Score.domains.map((d) => `<code>@${esc(d)}</code>`).join(" or ")}) so your score is recorded.
-      Your personal Gmail won't work. Once you're signed in, switching tabs or windows and copying or pasting are recorded with your score.${Score.status === "unavailable" ? "" : '<div class="g-signin"></div><span class="muted small">Nothing happens when you click? Allow pop-ups for this site, or open the link in Chrome instead of an app\'s built-in browser.</span>'}<span class="muted" id="signin-detail">${esc(Score.detail)}</span></div>`;
+      Your personal Gmail won't work. Once you're signed in, switching tabs or windows is recorded with your score.${Score.status === "unavailable" ? "" : '<div class="g-signin"></div><span class="muted small">Nothing happens when you click? Allow pop-ups for this site, or open the link in Chrome instead of an app\'s built-in browser.</span>'}<span class="muted" id="signin-detail">${esc(Score.detail)}</span></div>`;
   }
   function renderGate() {
     $("slide").innerHTML = `<div class="eyebrow">Before you start</div>
@@ -241,7 +241,6 @@
     btn.textContent = "Copy";
     btn.setAttribute("aria-label", "Copy this document");
     const done = (ok) => {
-      if (ok) noteActivity("copy", "Copy button: the slide's document");
       if (!ok) { // no clipboard access: select the document so Ctrl+C copies it
         const range = document.createRange(); range.selectNodeContents(pre.firstChild);
         const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
@@ -254,9 +253,7 @@
       ta.style.cssText = "position:fixed;opacity:0";
       document.body.appendChild(ta); ta.select();
       let ok = false;
-      fromCopyButton = true;
       try { ok = document.execCommand("copy"); } catch (e) {}
-      fromCopyButton = false;
       ta.remove(); done(ok);
     };
     btn.onclick = () => {
@@ -505,30 +502,27 @@
 
   function restart() {
     if (progress.solved.length && !confirm("Restart the day from the first slide? Your progress on this device will be cleared" + (Score.user ? ", and your score in the class sheet starts again from 0." : "."))) return;
-    // tab switches and copy/paste stay counted across a restart
+    // tab switches stay counted across a restart
     progress = Object.assign(fresh(), { activity: progress.activity });
     save();
     Score.sync();
     go(0);
   }
 
-  // ---------- activity: tab switches, copy and paste ----------
+  // ---------- activity: tab and window switches ----------
   // Recorded only for signed-in students, who are told so on the sign-in panel.
-  let fromCopyButton = false, hiddenAt = 0, blurAt = 0;
-  const clip = (t, n) => { t = String(t || "").replace(/\s+/g, " ").trim(); return t.length > n ? t.slice(0, n) + "…" : t; };
+  let hiddenAt = 0, blurAt = 0;
   function noteActivity(kind, detail) {
     if (!Score.user) return;
-    const a = progress.activity = Object.assign({ tabs: 0, away: 0, copies: 0, pastes: 0 }, progress.activity);
-    if (kind === "left tab" || kind === "left window") a.tabs++;
-    if (kind === "copy") a.copies++;
-    if (kind === "paste") a.pastes++;
+    const a = progress.activity = Object.assign({ tabs: 0, away: 0 }, progress.activity);
+    a.tabs++;
     save();
     const i = progress.at - 1; // -1 is the intro, N the finale
     Score.event({ slide: i, op: steps[i] ? steps[i].op : i < 0 ? "intro" : "finale", kind, answer: detail });
   }
   const awayFor = (since, kind) => {
     const secs = Math.round((Date.now() - since) / 1000);
-    progress.activity = Object.assign({ tabs: 0, away: 0, copies: 0, pastes: 0 }, progress.activity);
+    progress.activity = Object.assign({ tabs: 0, away: 0 }, progress.activity);
     if (Score.user) progress.activity.away += secs;
     noteActivity(kind, `away ${secs} s`);
   };
@@ -545,20 +539,6 @@
   window.addEventListener("focus", () => {
     if (blurAt && !document.hidden && Date.now() - blurAt >= 3000) awayFor(blurAt, "left window");
     blurAt = 0;
-  });
-  const onCopy = (e) => {
-    if (fromCopyButton) return;
-    const sel = String(window.getSelection() || "") || (e.target && e.target.value ? e.target.value.slice(e.target.selectionStart, e.target.selectionEnd) : "");
-    noteActivity("copy", `${e.type === "cut" ? "cut" : "copied"} ${sel.length} chars: ${clip(sel, 120)}`);
-  };
-  document.addEventListener("copy", onCopy);
-  document.addEventListener("cut", onCopy);
-  document.addEventListener("paste", (e) => {
-    const text = (e.clipboardData && e.clipboardData.getData("text")) || "";
-    const given = [...document.querySelectorAll("#slide .given")].map((g) => clip(g.firstChild && g.firstChild.textContent, 100000));
-    const place = e.target && e.target.id === "editor" ? "the query box" : "the page";
-    const fromForm = given.length && given.some((g) => clip(text, 100000) === g) ? " (the slide's own document)" : "";
-    noteActivity("paste", `pasted ${text.length} chars into ${place}${fromForm}: ${clip(text, 160)}`);
   });
 
   // ---------- wiring ----------
