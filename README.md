@@ -50,7 +50,7 @@ Every option is a real query: whatever the student picks runs on the data and sh
 
 ## Score tracking (optional)
 
-Students sign in with their **university Google account**, and each one's score lands in a Google Sheet you own. Personal Gmail accounts are refused.
+Students sign in with their **university Google account**, and each one's score lands in a Google Sheet you own. Only `@nst.rishihood.edu.in` (students) and `@rishihood.edu.in` (staff) accounts can sign in; personal Gmail and any other domain are refused. Staff who sign in to test get a row in the sheet too.
 
 **What you get in the sheet**
 - **Scores:** one row per student: score, slides solved, how many on the first try, how many with "Show answer", wrong tries, the slide they're on, finished or not, first seen and last update.
@@ -64,9 +64,9 @@ Students sign in with their **university Google account**, and each one's score 
 2. **Make a sign-in client ID.** In [Google Cloud Console](https://console.cloud.google.com/), pick or create a project:
    - **APIs & Services → OAuth consent screen:** choose **Internal** if the project belongs to your university's Google Workspace (only university accounts can sign in). Otherwise choose **External** and publish the app; it only asks for name and email, so Google doesn't need to review it.
    - **APIs & Services → Credentials → Create credentials → OAuth client ID → Web application.** Under **Authorized JavaScript origins**, add `https://<your-username>.github.io`. No redirect URIs are needed. Copy the client ID.
-3. **Fill in the script's settings** at the top of `Code.gs`: `CLIENT_ID` (from step 2) and `ALLOWED_DOMAIN` (e.g. `university.edu`). Save.
+3. **Fill in the script's settings** at the top of `Code.gs`: `CLIENT_ID` (from step 2). `ALLOWED_DOMAINS` is already set to the two Rishihood domains. Save.
 4. **Deploy the script.** **Deploy → New deployment → Web app**, with **Execute as: Me** and **Who has access: Anyone**. Authorize it, then copy the **Web app URL** (ends in `/exec`). "Anyone" is needed because the site calls the script without Google cookies; the script itself only accepts verified sign-ins from your domain.
-5. **Fill in [`js/config.js`](js/config.js):** `googleClientId`, `allowedDomain` and `scriptUrl`. Commit and push.
+5. **Fill in [`js/config.js`](js/config.js):** `googleClientId` and `scriptUrl` (`allowedDomains` is already set). Commit and push.
 6. **Test it:** open the site, sign in, answer one slide, and check that a row appears in **Scores**.
 
 When you change `Code.gs` later, use **Deploy → Manage deployments → Edit → New version**, so the URL stays the same.

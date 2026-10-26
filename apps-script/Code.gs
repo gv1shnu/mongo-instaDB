@@ -3,7 +3,7 @@
  *
  * The slide deck sends each student's progress here after every answer.
  * This script checks the student's Google sign-in token, accepts only
- * accounts from the university domain, and writes:
+ * accounts from the university's email domains, and writes:
  *   - "Scores":   one row per student, updated in place
  *   - "Attempts": one row per answer (right, wrong, or "Show answer")
  *
@@ -13,9 +13,9 @@
 // ---- settings: fill these in ----
 const SETTINGS = {
   // OAuth client ID from Google Cloud (the same one as in js/config.js)
-  CLIENT_ID: "",
-  // Only accounts from this domain are accepted, e.g. "university.edu"
-  ALLOWED_DOMAIN: "",
+  CLIENT_ID: "597031381-es9guvfhndfq1e5qhjbe707d6b0ilp8q.apps.googleusercontent.com",
+  // Only accounts from these email domains are accepted (exact match; sub-domains aren't included)
+  ALLOWED_DOMAINS: ["nst.rishihood.edu.in", "rishihood.edu.in"],
   // Leave empty when this script is bound to the sheet (Extensions → Apps Script)
   SPREADSHEET_ID: "",
 };
@@ -51,7 +51,8 @@ function doPost(e) {
 function authError_(msg) { const e = new Error(msg); e.code = 401; return e; }
 
 function verifyToken_(token) {
-  if (!SETTINGS.CLIENT_ID || !SETTINGS.ALLOWED_DOMAIN) throw new Error("The script's SETTINGS are not filled in.");
+  const domains = SETTINGS.ALLOWED_DOMAINS.map((d) => String(d).toLowerCase());
+  if (!SETTINGS.CLIENT_ID || !domains.length) throw new Error("The script's SETTINGS are not filled in.");
   if (!token || typeof token !== "string") throw authError_("Not signed in.");
   const cache = CacheService.getScriptCache();
   const key = "tok:" + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, token));
@@ -61,13 +62,14 @@ function verifyToken_(token) {
   const res = UrlFetchApp.fetch("https://oauth2.googleapis.com/tokeninfo?id_token=" + encodeURIComponent(token), { muteHttpExceptions: true });
   if (res.getResponseCode() !== 200) throw authError_("Your sign-in has expired. Sign in again.");
   const c = JSON.parse(res.getContentText());
-  const domain = SETTINGS.ALLOWED_DOMAIN.toLowerCase();
   const email = String(c.email || "").toLowerCase();
   if (c.aud !== SETTINGS.CLIENT_ID) throw authError_("This sign-in wasn't made for this app.");
   if (["accounts.google.com", "https://accounts.google.com"].indexOf(c.iss) < 0) throw authError_("Unknown sign-in issuer.");
   if (String(c.email_verified) !== "true") throw authError_("Your Google email isn't verified.");
   if (Number(c.exp) * 1000 < Date.now()) throw authError_("Your sign-in has expired. Sign in again.");
-  if (String(c.hd || "").toLowerCase() !== domain && !email.endsWith("@" + domain)) throw authError_("Use your university account (@" + domain + ").");
+  // the email's own domain, or the Google Workspace domain it belongs to (hd), must be on the list
+  const hd = String(c.hd || "").toLowerCase();
+  if (domains.indexOf(email.split("@")[1]) < 0 && domains.indexOf(hd) < 0) throw authError_("Use your university account (@" + domains.join(" or @") + ").");
 
   const user = { email: email, name: String(c.name || "") };
   const ttl = Math.min(3000, Math.floor(Number(c.exp) - Date.now() / 1000) - 30);

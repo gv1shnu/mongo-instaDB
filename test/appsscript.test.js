@@ -40,15 +40,19 @@ const ctx = {
 };
 vm.createContext(ctx);
 const src = fs.readFileSync(__dirname + "/../apps-script/Code.gs", "utf8")
-  .replace('CLIENT_ID: ""', 'CLIENT_ID: "client-1"').replace('ALLOWED_DOMAIN: ""', 'ALLOWED_DOMAIN: "uni.edu"');
+  .replace(/CLIENT_ID: "[^"]*"/, 'CLIENT_ID: "client-1"');
 vm.runInContext(src, ctx);
 
 const exp = Math.floor(Date.now() / 1000) + 3600;
-const claims = (over) => Object.assign({ aud: "client-1", iss: "https://accounts.google.com", email: "asha@uni.edu", email_verified: "true", hd: "uni.edu", exp: String(exp), name: "Asha" }, over);
+const claims = (over) => Object.assign({ aud: "client-1", iss: "https://accounts.google.com", email: "asha@nst.rishihood.edu.in", email_verified: "true", hd: "nst.rishihood.edu.in", exp: String(exp), name: "Asha" }, over);
 tokenInfo = {
   good: claims(), gmail: claims({ email: "asha@gmail.com", hd: undefined }), otherApp: claims({ aud: "someone-else" }),
   old: claims({ exp: String(Math.floor(Date.now() / 1000) - 10) }), unverified: claims({ email_verified: "false" }),
-  evil: claims({ email: "=cmd@uni.edu", name: "=HYPERLINK(\"x\")" }),
+  evil: claims({ email: "=cmd@nst.rishihood.edu.in", name: "=HYPERLINK(\"x\")" }),
+  teacher: claims({ email: "vishnu@rishihood.edu.in", hd: "rishihood.edu.in", name: "Vishnu" }),
+  sameOrg: claims({ email: "ravi@nst.rishihood.edu.in", hd: "rishihood.edu.in" }),
+  lookalike: claims({ email: "x@notrishihood.edu.in", hd: "notrishihood.edu.in" }),
+  otherSub: claims({ email: "x@alumni.rishihood.edu.in", hd: "alumni.rishihood.edu.in" }),
 };
 const post = (body) => ctx.doPost({ postData: { contents: JSON.stringify(body) } });
 const base = { slides: 35, at: 6, solved: [0, 1, 2, 4], firstTry: [0, 2, 4], revealed: [4], wrong: { 1: 2, 3: 1 } };
@@ -64,10 +68,10 @@ expect("nothing written for rejected students", Object.keys(sheets), []);
 
 const r = post(Object.assign({ idToken: "good", events: [{ id: "e1", t: Date.now(), slide: 1, op: "insertMany()", kind: "wrong", answer: "C: db.posts.insertMany(...)" }] }, base));
 expect("good token → ok, score = solved minus shown", [r.ok, r.score, r.outOf], [true, 3, 35]);
-const row = () => sheets.Scores.rows.find((x) => x[0] === "asha@uni.edu");
-expect("score row", row().slice(0, 10), ["asha@uni.edu", "Asha", 3, 35, 4, 2, 1, 3, 6, "no"]);
+const row = () => sheets.Scores.rows.find((x) => x[0] === "asha@nst.rishihood.edu.in");
+expect("score row", row().slice(0, 10), ["asha@nst.rishihood.edu.in", "Asha", 3, 35, 4, 2, 1, 3, 6, "no"]);
 expect("solved and shown slides are 1-based", row().slice(12), ["1, 2, 3, 5", "5"]);
-expect("attempt logged", sheets.Attempts.rows[1].slice(1, 7), ["asha@uni.edu", 2, "insertMany()", "wrong", "C: db.posts.insertMany(...)", "e1"]);
+expect("attempt logged", sheets.Attempts.rows[1].slice(1, 7), ["asha@nst.rishihood.edu.in", 2, "insertMany()", "wrong", "C: db.posts.insertMany(...)", "e1"]);
 
 post(Object.assign({ idToken: "good" }, base, { solved: [...Array(35).keys()], at: 36 }));
 expect("same student updates one row", sheets.Scores.rows.length, 2);
@@ -76,7 +80,12 @@ expect("first seen is kept", row()[10] instanceof Date, true);
 
 expect("junk slide numbers are ignored", post(Object.assign({ idToken: "good" }, base, { solved: [0, 0, -1, 99, "x", 3] })).score, 2);
 post(Object.assign({ idToken: "evil", events: [{ slide: 0, kind: "wrong", answer: "=IMPORTXML(1)" }] }, base));
-expect("text that looks like a formula is stored as text", [sheets.Scores.rows.at(-1)[0], sheets.Scores.rows.at(-1)[1], sheets.Attempts.rows.at(-1)[5]], ["'=cmd@uni.edu", "'=HYPERLINK(\"x\")", "'=IMPORTXML(1)"]);
+expect("text that looks like a formula is stored as text", [sheets.Scores.rows.at(-1)[0], sheets.Scores.rows.at(-1)[1], sheets.Attempts.rows.at(-1)[5]], ["'=cmd@nst.rishihood.edu.in", "'=HYPERLINK(\"x\")", "'=IMPORTXML(1)"]);
+
+expect("teacher's @rishihood.edu.in account is accepted", post(Object.assign({ idToken: "teacher" }, base)).ok, true);
+expect("student whose Workspace domain is rishihood.edu.in is accepted", post(Object.assign({ idToken: "sameOrg" }, base)).ok, true);
+expect("look-alike domain is refused", post(Object.assign({ idToken: "lookalike" }, base)).code, 401);
+expect("a different sub-domain is refused", post(Object.assign({ idToken: "otherSub" }, base)).code, 401);
 
 console.log(fail ? `\n${fail} FAILED` : "\nALL PASSED");
 process.exit(fail ? 1 : 0);

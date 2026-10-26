@@ -4,8 +4,10 @@
 // reached, the deck keeps working and progress stays saved in the browser.
 (function (root) {
   const cfg = root.INSTADB_CONFIG || {};
-  const enabled = !!(cfg.googleClientId && cfg.allowedDomain && cfg.scriptUrl);
-  const domain = String(cfg.allowedDomain || "").toLowerCase();
+  // allowedDomains is a list; a single allowedDomain string also works
+  const domains = [].concat(cfg.allowedDomains || [], cfg.allowedDomain || []).map((d) => String(d).toLowerCase()).filter(Boolean);
+  const enabled = !!(cfg.googleClientId && domains.length && cfg.scriptUrl);
+  const domainList = domains.map((d) => "@" + d).join(" or ");
   const AUTH_KEY = "instadb-auth", OUTBOX_KEY = "instadb-outbox";
   const RETRY = [5, 15, 30, 60, 120];
 
@@ -35,8 +37,8 @@
     let c;
     try { c = decodeJwt(credential); } catch (e) { setStatus("signin", "That sign-in didn't work. Try again."); return; }
     const email = String(c.email || "").toLowerCase();
-    if (String(c.hd || "").toLowerCase() !== domain && !email.endsWith("@" + domain)) {
-      setStatus("wrong-domain", `${email} isn't a university account. Sign in with your @${domain} account.`);
+    if (!domains.includes(email.split("@")[1]) && !domains.includes(String(c.hd || "").toLowerCase())) {
+      setStatus("wrong-domain", `${email} isn't a university account. Sign in with your ${domainList} account.`);
       return;
     }
     const changed = !user || user.email !== email;
@@ -70,7 +72,8 @@
         google.accounts.id.initialize({
           client_id: cfg.googleClientId,
           callback: (r) => signedIn(r.credential),
-          hd: domain,
+          // with one domain, Google's account chooser shows only those accounts
+          hd: domains.length === 1 ? domains[0] : undefined,
           auto_select: true,
           cancel_on_tap_outside: false,
         });
@@ -167,7 +170,7 @@
     get user() { return user; },
     get status() { return status; },
     get detail() { return detail; },
-    get domain() { return domain; },
+    get domains() { return domains; },
     // the deck should wait for sign-in: only when configured, required, and Google sign-in actually loaded
     mustSignIn: () => enabled && !!cfg.requireSignIn && !user && status !== "unavailable",
     init, event, sync, signOut, renderButtons,

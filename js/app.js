@@ -157,7 +157,7 @@
     const u = Score.user;
     if (u) return `<div class="signin-panel ok"><b>Signed in as ${esc(u.email)}.</b> Your score is saved to the class sheet after every answer.
       <span class="muted" id="signin-detail">${esc(Score.detail)}</span></div>`;
-    return `<div class="signin-panel"><b>Sign in with your university Google account</b> (<code>@${esc(Score.domain)}</code>) so your score is recorded.
+    return `<div class="signin-panel"><b>Sign in with your university Google account</b> (${Score.domains.map((d) => `<code>@${esc(d)}</code>`).join(" or ")}) so your score is recorded.
       Your personal Gmail won't work.${Score.status === "unavailable" ? "" : '<div class="g-signin"></div>'}<span class="muted" id="signin-detail">${esc(Score.detail)}</span></div>`;
   }
   function renderGate() {
