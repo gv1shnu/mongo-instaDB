@@ -366,18 +366,36 @@
     find(filter) { matches({}, filter || {}); return new Cursor(this._docs, filter || {}); }
     findOne(filter) { const d = this._docs.find((x) => matches(x, filter || {})); return d ? clone(d) : null; }
     countDocuments(filter) { return this._docs.filter((x) => matches(x, filter || {})).length; }
-    _update(filter, update, many) {
+    _update(filter, update, many, options) {
       if (update === undefined) throw new QueryError("update needs two arguments: a filter and an update");
+      if (options !== undefined && !isPlainObject(options)) throw new QueryError("the third argument of an update is an options object, e.g. { upsert: true }");
+      const bad = options && Object.keys(options).find((k) => k !== "upsert");
+      if (bad) throw new QueryError(`unknown update option: ${bad} (this lab only uses { upsert: true })`);
       if (isPlainObject(update) && Object.keys(update).length && !Object.keys(update).some((k) => k.startsWith("$")))
         throw new QueryError("Update document requires atomic operators (like $set, $inc, $push). To swap the whole document, use replaceOne.");
+      const plain = isPlainObject(update) && Object.keys(update).find((k) => !k.startsWith("$"));
+      if (plain === "upsert") throw new QueryError("Unknown modifier: upsert. upsert is an option: it goes in a third argument, updateOne(filter, update, { upsert: true })");
+      if (plain) throw new QueryError(`Unknown modifier: ${plain}. Every key of the update must be an operator such as $set`);
       const hits = this._docs.filter((x) => matches(x, filter || {}));
       const targets = many ? hits : hits.slice(0, 1);
+      if (!targets.length && options && options.upsert === true) {
+        // nothing matched: build the new document from the filter's plain equality fields, then apply the update
+        this._db.__ids++;
+        const doc = { _id: new ObjectId("6720" + String(this._db.__ids).padStart(20, "0")) };
+        for (const k of Object.keys(filter || {})) {
+          const v = filter[k];
+          if (!k.startsWith("$") && !k.includes(".") && !isOpExpr(v) && !(v instanceof RegExp)) doc[k] = clone(v);
+        }
+        applyUpdate(doc, update, { now: this._db.now, filter });
+        this._docs.push(doc);
+        return { acknowledged: true, insertedId: null, matchedCount: 0, modifiedCount: 0, upsertedCount: 1, upsertedId: doc._id };
+      }
       let modified = 0;
       for (const d of targets) if (applyUpdate(d, update, { now: this._db.now, filter })) modified++;
       return { acknowledged: true, insertedId: null, matchedCount: targets.length, modifiedCount: modified, upsertedCount: 0 };
     }
-    updateOne(f, u) { return this._update(f, u, false); }
-    updateMany(f, u) { return this._update(f, u, true); }
+    updateOne(f, u, o) { return this._update(f, u, false, o); }
+    updateMany(f, u, o) { return this._update(f, u, true, o); }
     replaceOne(filter, doc) {
       if (doc === undefined) throw new QueryError("replaceOne needs two arguments: a filter and the new document");
       if (!isPlainObject(doc)) throw new QueryError("replaceOne needs a document object as its second argument");

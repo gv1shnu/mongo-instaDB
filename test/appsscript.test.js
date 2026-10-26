@@ -111,6 +111,15 @@ for (let k = 5; k < 17; k++) { tokenInfo["x" + k] = student("Stu", k); finish("x
 expect("top 10 only", finish("s4", () => true).board.top.length, 10);
 expect("a retake can't raise the score", row("dev4@nst.rishihood.edu.in")[2], 300);
 
+// ---- a new version of the deck starts fresh, and is ranked on its own ----
+tokenInfo.v2 = student("Zara", 50);
+post({ idToken: "v2", slides: 35, deck: "", answers: ans([[0, false], [1, false]]) });
+r = post({ idToken: "v2", slides: 24, deck: "common-24", answers: ans(Array.from({ length: 24 }, (_, n) => [n, true])), board: true });
+expect("answers from an older deck don't carry over", [r.score, r.outOf, r.answers[0].ok], [240, 240, true]);
+expect("only runs of the same deck are ranked together", [r.board.rank, r.board.of, r.board.top.map((t) => t.name)], [1, 1, ["Zara"]]);
+r = post({ idToken: "v2", slides: 24, deck: "common-24", answers: ans([[0, false]]) });
+expect("within the same deck, the first answer still counts", r.answers[0].ok, true);
+
 // ---- activity and safety ----
 const act = (a) => post({ idToken: "teacher", slides: S, activity: a });
 const tr = () => row("vishnu@rishihood.edu.in");

@@ -53,7 +53,7 @@ function doPost(e) {
       s = summarize_(body, found ? stored_(sh.getRange(row, COL.answers).getValue()) : null);
       writeScore_(sh, row, !!found, user, s);
       writeAttempts_(user, body.events);
-      if (body.board && s.finished) board = leaderboard_(sh, user.email);
+      if (body.board && s.finished) board = leaderboard_(sh, user.email, s.max);
     } finally {
       lock.releaseLock();
     }
@@ -105,6 +105,9 @@ function stored_(cell) {
 // Hints only add up. Points are recomputed here from the kept answers.
 function summarize_(body, stored) {
   const outOf = Math.max(1, Math.min(200, parseInt(body.slides, 10) || 1));
+  // answers saved for a different set of slides (an older version of the deck) don't carry over
+  const deck = String(body.deck || "").slice(0, 40);
+  if (stored && (stored.v || "") !== deck) stored = null;
   const slide = (k) => { const n = parseInt(k, 10); return n >= 0 && n < outOf ? n : -1; };
   const answers = {};
   if (stored) Object.keys(stored.a).forEach((k) => { if (slide(k) >= 0) answers[slide(k)] = { ok: !!stored.a[k].ok, g: String(stored.a[k].g || "") }; });
@@ -123,7 +126,7 @@ function summarize_(body, stored) {
   const right = done.filter((n) => answers[n].ok);
   const score = right.reduce((t, n) => t + (hints.indexOf(n) >= 0 ? SETTINGS.POINTS - SETTINGS.HINT_COST : SETTINGS.POINTS), 0);
   return {
-    outOf: outOf, max: outOf * SETTINGS.POINTS, score: score,
+    deck: deck, outOf: outOf, max: outOf * SETTINGS.POINTS, score: score,
     answers: answers, hints: hints,
     right: right.length, wrong: done.length - right.length, answered: done.length,
     at: Math.max(0, Math.min(outOf + 1, parseInt(body.at, 10) || 0)),
@@ -163,16 +166,17 @@ function writeScore_(sh, row, found, user, s) {
   sh.getRange(row, 1, 1, SCORES_HEADERS.length).setValues([[
     text_(user.email, 200), text_(user.name, 200), s.score, s.max, s.right, s.wrong, s.hints.length, s.answered,
     s.at, s.finished ? "yes" : "no", firstSeen, now, finishedAt,
-  ].concat(activity, [JSON.stringify({ a: answers, h: s.hints })])]);
+  ].concat(activity, [JSON.stringify({ v: s.deck, a: answers, h: s.hints })])]);
 }
 
 // Students who have answered every slide, ranked by score; ties share a rank and are
 // listed by who finished first.
-function leaderboard_(sh, email) {
+function leaderboard_(sh, email, max) {
   const rows = sh.getDataRange().getValues().slice(1);
   const domains = SETTINGS.LEADERBOARD_DOMAINS.map((d) => String(d).toLowerCase());
   const eligible = (e) => domains.indexOf(String(e).toLowerCase().split("@")[1]) >= 0;
-  const done = rows.filter((r) => r[9] === "yes" && eligible(r[0]))
+  // only runs of this version of the deck (same "Out of") are ranked together
+  const done = rows.filter((r) => r[9] === "yes" && eligible(r[0]) && Number(r[3]) === max)
     .map((r) => ({ email: String(r[0]).toLowerCase(), name: String(r[1] || r[0]).replace(/^'/, "").split(/[\s@]/)[0], score: Number(r[2]) || 0, at: new Date(r[12] || r[11]).getTime() || 0 }))
     .sort((a, b) => b.score - a.score || a.at - b.at);
   let rank = 0;

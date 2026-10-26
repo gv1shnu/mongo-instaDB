@@ -15,8 +15,8 @@ STORY.steps.forEach((st, i) => {
 const user = (n) => state.users.find((u) => u.username === n);
 const post = (c) => state.posts.find((p) => p.caption === c) || {};
 console.log("end: users", state.users.length, "posts", state.posts.length);
-["neha_eats", "riya_codes", "arjun.clicks", "meera.dance", "ananya.reads", "rohan_travels"].forEach((n) => console.log("   ", show(user(n)).replace(/\n\s*/g, " ")));
-["Late night debugging sessions", "When the code works on first try", "Spiti valley in 10 frames", "Exam week be like"].forEach((c) => console.log("   ", c, "|", post(c).likes, JSON.stringify(post(c).hashtags)));
+["neha_eats", "meera.dance", "ananya.reads", "ishaan.films"].forEach((n) => console.log("   ", show(user(n)).replace(/\n\s*/g, " ")));
+["First dance cover!", "Spiti valley in 10 frames", "Exam week be like"].forEach((c) => console.log("   ", c, "|", post(c).likes, JSON.stringify(post(c).hashtags)));
 
 // Write steps: equivalent answers must pass, wrong ones must fail.
 const at = (op) => { const i = STORY.steps.findIndex((s) => s.op === op); if (i < 0) throw new Error("no step " + op); return i; };
@@ -30,27 +30,16 @@ expect("insertOne: fields in another order pass", same("insertOne()", 'db.users.
 expect("insertOne: age as text fails", same("insertOne()", 'db.users.insertOne({ username: "meera.dance", name: "Meera Nair", age: "20", city: "Pune", followers: 0, verified: false, accountType: "creator", interests: ["dance"] })'), false);
 expect("insertMany: two insertOne-style args fail", run('db.posts.insertOne({ caption: "a" }, { caption: "b" })', states[at("insertMany()")]).ok, false);
 expect("find with $eq passes", same("find()", 'db.posts.find({ username: { $eq: "arjun.clicks" } })'), true);
-expect("findOne step: find() fails", same("findOne()", 'db.users.find({ username: "meera.dance" })'), false);
-expect("regex: without $options misses Meera", same("$regex + $options", "db.posts.find({ caption: { $regex: /first/ } })"), false);
-expect("regex: /first/i shorthand passes", same("$regex + $options", "db.posts.find({ caption: /first/i })"), true);
 expect("$all: $in gives a different list", same("$all", 'db.users.find({ interests: { $in: ["travel", "photography"] } })'), false);
 expect("$exists: plain $ne gives a different list", same("$exists", 'db.users.find({ accountType: { $ne: "creator" } })'), false);
-expect("page 2: chained in another order passes", same("sort() + skip() + limit()", "db.posts.find().limit(4).skip(4).sort({ likes: -1 })", true), true);
-expect("page 2: missing sort fails", same("sort() + skip() + limit()", "db.posts.find().skip(4).limit(4)", true), false);
-expect("page 2: skip(8) fails", same("sort() + skip() + limit()", "db.posts.find().sort({ likes: -1 }).skip(8).limit(4)", true), false);
-expect("updateMany: updateOne fails", same("updateMany()", 'db.posts.updateOne({ type: "reel" }, { $inc: { likes: 100 }, $push: { hashtags: "#reelsweek" } })'), false);
-expect("updateMany: operators in other order pass", same("updateMany()", 'db.posts.updateMany({ type: "reel" }, { $push: { hashtags: "#reelsweek" }, $inc: { likes: 100 } })'), true);
 expect("$min: $set to 8000 gives the same document", same("$min", 'db.posts.updateOne({ caption: "Exam week be like" }, { $set: { likes: 8000 } })'), true);
-expect("$currentDate: same answer twice", same("$currentDate + $type", canon(STORY.steps[at("$currentDate + $type")])), true);
-expect("$currentDate: a Date instead of a timestamp fails", same("$currentDate + $type", 'db.users.updateOne({ username: "meera.dance" }, { $currentDate: { lastActive: true, lastSync: true } })'), false);
-expect("neha: $push without $each fails", same("updateOne()", 'db.users.updateOne({ username: "neha_eats" }, { $set: { verified: true }, $push: { interests: ["baking", "cafes"] } })'), false);
-expect("$addToSet: $push would duplicate music", same("$addToSet", 'db.users.updateOne({ username: "riya_codes" }, { $push: { interests: "music" } })'), false);
-expect("$pop: -1 removes the wrong end", same("$pop", 'db.users.updateOne({ username: "arjun.clicks" }, { $pop: { interests: -1 } })'), false);
-expect("$push: without $slice keeps 4", same("$push + $each, $sort, $slice", 'db.users.updateOne({ username: "meera.dance" }, { $push: { interests: { $each: ["kathak", "bollywood", "hip-hop"], $sort: 1 } } })'), false);
-expect("positional: hashtags.0 gives the same result", same("positional $", 'db.posts.updateOne({ caption: "Late night debugging sessions" }, { $set: { "hashtags.0": "#100DaysOfCode" } })'), true);
+expect("updateMany: updateOne fails", same("updateMany()", 'db.posts.updateOne({ type: "reel" }, { $inc: { likes: 100 } })'), false);
+expect("updateMany: $set to 100 fails", same("updateMany()", 'db.posts.updateMany({ type: "reel" }, { $set: { likes: 100 } })'), false);
+expect("neha: updateOne with $set passes", same("updateOne()", 'db.users.updateOne({ username: "neha_eats" }, { $set: { verified: true } })'), true);
+expect("neha: $set without the operator fails", run('db.users.updateOne({ username: "neha_eats" }, { verified: true })', states[at("updateOne()")]).ok, false);
+expect("neha: updating everyone fails", same("updateOne()", 'db.users.updateMany({}, { $set: { verified: true } })'), false);
+expect("upsert creates ishaan.films", run(canon(STORY.steps[at("upsert")]), states[at("upsert")]).state.users.some((u) => u.username === "ishaan.films"), true);
 expect("deleteOne: deleteMany fails", same("deleteOne()", 'db.posts.deleteMany({ username: "riya_codes" })'), false);
-expect("replaceOne: fields in another order pass", same("replaceOne()", 'db.users.replaceOne({ username: "rohan_travels" }, { accountType: "business", verified: false, followers: 7800, city: "Kolkata", fullName: "Rohan Das Travels", username: "rohan_travels" })'), true);
-expect("replaceOne: updateOne + $set keeps interests, fails", same("replaceOne()", 'db.users.updateOne({ username: "rohan_travels" }, { $set: { fullName: "Rohan Das Travels", accountType: "business" } })'), false);
 expect("deleteMany: $lte fails (Meera's reel at 100)", same("deleteMany()", "db.posts.deleteMany({ likes: { $lte: 100 } })"), false);
 // Every option runs. A wrong option must change something the student can see
 // (a different result, or an error), unless it carries a note explaining why it's still wrong.

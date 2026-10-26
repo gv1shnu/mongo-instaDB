@@ -1,5 +1,5 @@
-// "One day on instaDB": a linear story covering Lectures 2 and 3
-// (CRUD, query operators, update operators), shown one slide per step.
+// "One day on instaDB": a linear story covering what every section was taught
+// from Lectures 2 and 3 (CRUD, query operators, field update operators).
 // Step modes:
 //   "write"   the student types the whole query. Checked by running it and
 //             comparing the result with `answer`, so equivalent queries pass.
@@ -28,12 +28,11 @@
       { id: "dawn", title: "7 a.m.: a new creator joins (Create)" },
       { id: "morning", title: "Morning: opening profiles (Read)" },
       { id: "explore", title: "Late morning: the Explore page (comparison operators)" },
-      { id: "search", title: "Noon: the search bar (regex and array queries)" },
+      { id: "search", title: "Noon: the search bar (array queries)" },
       { id: "campaign", title: "Afternoon: a brand comes calling (logical operators)" },
-      { id: "feed", title: "Evening: the Trending tab (sort, skip, limit)" },
       { id: "night", title: "9 p.m.: Reels Week and profile edits (field updates)" },
-      { id: "tags", title: "10 p.m.: interests and hashtags (array updates)" },
-      { id: "late", title: "11 p.m.: a rebrand and the cleanup (replaceOne, Delete)" },
+      { id: "tags", title: "10 p.m.: a blue tick and a new phone (updateOne, upsert)" },
+      { id: "late", title: "11 p.m.: the cleanup (Delete)" },
     ],
     steps: [
       // ================= CREATE =================
@@ -71,20 +70,6 @@
         hint: "The read method that returns all matches: find( { field: value } ).",
         after: "Two posts: Marine Drive at golden hour and the Spiti valley carousel. The grid is ready.",
       },
-      {
-        chapter: "morning", op: "findOne()", mode: "choice",
-        screen: { time: "8:15", title: "Search" },
-        before: "8:15 a.m. Riya searches for <code>meera.dance</code>, the dancer who joined at 7 a.m. A profile page shows one person, so the app wants a single document back, not a list." +
-          task("Get the user whose <code>username</code> is <code>\"meera.dance\"</code>, as a single document. <b>Pick the query that does it.</b>"),
-        options: [
-          { code: 'db.users.find({ username: "meera.dance" })', why: "Right person, wrong shape: find() always returns a list, even when only one document matches." },
-          { code: 'db.users.findOne({})', why: "An empty filter matches everyone, so findOne() just returns the first user: riya_codes." },
-          { code: 'db.users.findOne({ username: "meera.dance" })', ok: true },
-          { code: 'db.users.findOne("meera.dance")', why: "The filter has to be an object that names the field: { username: \"meera.dance\" }." },
-        ],
-        hint: "One read method returns a list; the other returns a single document (or null).",
-        after: "One document, with the <code>_id</code> MongoDB created at 7 a.m. find() would have returned a list holding one item; findOne() returns the document itself.",
-      },
       // ================= COMPARISON =================
       {
         chapter: "explore", op: "$gt", mode: "pick",
@@ -105,34 +90,15 @@
         after: "Four accounts: sara.draws (exactly 2,300), neha_eats, rohan_travels and riya_codes (exactly 12,500). With $gt and $lt, Sara and Riya would have been left out.",
       },
       {
-        chapter: "explore", op: "$in + $nin", mode: "pick",
+        chapter: "explore", op: "$in", mode: "pick",
         screen: { time: "11:20", title: "Watch next" },
-        before: "11:20 a.m. A \"Watch next\" row shows reels and carousels. Memes have their own row, so they're left out here." +
-          task("Find posts whose <code>type</code> is <b>\"reel\" or \"carousel\"</b>, and whose <code>hashtags</code> do <b>not</b> include <b>\"#memes\"</b>."),
-        code: ["db.posts.find({ type: { ", B("$in", ["$all", "$nin", "$eq"]), ': ["reel", "carousel"] }, hashtags: { ', B("$nin", ["$in", "$ne", "$all"]), ': ["#memes"] } })'],
-        hint: "One operator means 'any of these values', the other means 'none of these values'. On an array field like hashtags, every element is checked.",
-        after: "Six posts, including Meera's First dance cover from this morning. Dev's coding reel is out: its hashtags include #memes.",
+        before: "11:20 a.m. A \"Watch next\" row shows posts that move: reels and carousels." +
+          task("Find posts whose <code>type</code> is <b>\"reel\" or \"carousel\"</b>."),
+        code: ["db.posts.find({ type: { ", B("$in", ["$all", "$nin", "$eq"]), ': ["reel", "carousel"] } })'],
+        hint: "The operator that means 'any of these values'.",
+        after: "Seven posts, including Meera's First dance cover from this morning. Photos are left out.",
       },
-      // ================= REGEX + ARRAY QUERIES =================
-      {
-        chapter: "search", op: "$regex", mode: "pick",
-        screen: { time: "12:00", title: "Search · people" },
-        before: "12 p.m. On the search screen, Riya types the letter <b>r</b>. The app suggests accounts whose username starts with that letter." +
-          task("Find users whose <code>username</code> <b>starts with</b> a lower-case <b>\"r\"</b>, using the pattern <code>/^r/</code>. The <code>^</code> means \"starts with\"."),
-        code: ["db.users.find({ username: { ", B("$regex", ["$eq", "$in", "$options"]), ": /^r/ } })"],
-        hint: "The operator that matches text against a pattern such as /^r/.",
-        after: "riya_codes and rohan_travels. <code>/^r/</code> only looks at the first letter, so arjun.clicks, with an r in the middle, doesn't count.",
-      },
-      {
-        chapter: "search", op: "$regex + $options", mode: "pick", trap: true,
-        screen: { time: "12:10", title: "Search · posts", view: "feed" },
-        before: "12:10 p.m. Meera searches posts for the word <b>first</b>. Her own post is called \"First dance cover!\", with a capital F." +
-          task("Find posts whose <code>caption</code> contains <b>\"first\"</b> anywhere, in <b>any case</b> (first, First, FIRST). Use the pattern <code>/first/</code>, plus the setting <code>\"i\"</code>, which ignores upper and lower case."),
-        code: ["db.posts.find({ caption: { ", B("$regex", ["$eq", "$in", "$all"]), ": /first/, ", B("$options", ["$flags", "$case", "$regex"]), ': "i" } })'],
-        hint: "First blank: the pattern operator. Second blank: the operator that holds regex flags. \"i\" means ignore case.",
-        after: "Three posts: Riya's \"Shipped my first full-stack app!\", Dev's \"When the code works on first try\" and Meera's \"First dance cover!\".",
-        trapNote: "Regex is case-sensitive by default. Without $options: \"i\", Meera's post with its capital F would be missing.",
-      },
+      // ================= ARRAY QUERIES =================
       {
         chapter: "search", op: "$all", mode: "choice",
         screen: { time: "12:30", title: "Trip filmmakers", field: "interests" },
@@ -231,29 +197,14 @@
         hint: "The opposite of $or: none of the conditions may hold.",
         after: "Five accounts: neha_eats, ananya.reads, sara.draws, rohan_travels and Meera. The brand has its lists.",
       },
-      // ================= CURSOR =================
-      {
-        chapter: "feed", op: "sort() + skip() + limit()", mode: "choice",
-        screen: { time: "19:00", title: "Trending · page 2", view: "feed", ranked: true },
-        before: "7 p.m. The Trending tab lists posts with the most-liked first, 4 posts per page. A user scrolls down to page 2." +
-          task("From <code>posts</code>, get <b>page 2</b>: most likes first, leave out the first 4, and show the 4 after them. <b>Pick the query.</b>"),
-        options: [
-          { code: "db.posts.find().sort({ likes: -1 }).limit(4)", why: "No skip, so this is page 1: positions #1 to #4." },
-          { code: "db.posts.find().sort({ likes: 1 }).skip(4).limit(4)", why: "likes: 1 sorts from the fewest likes up, so this is page 2 of the LEAST-liked posts." },
-          { code: "db.posts.find().skip(4).limit(4)", why: "Without sort(), the posts come in storage order, so \"page 2\" is just the 5th to 8th post ever inserted." },
-          { code: "db.posts.find().sort({ likes: -1 }).skip(4).limit(4)", ok: true },
-        ],
-        hint: "-1 = descending. Page 2 skips over page 1, then limits to one page.",
-        after: "Positions #5 to #8: Golden hour, Shipped my first app, Best dosa, Late night debugging. Without sort(), there would be no guarantee which 4 posts land on page 2.",
-      },
       // ================= UPDATE =================
       {
         chapter: "night", op: "updateMany()", mode: "write",
         screen: { time: "21:00", title: "Reels Week" },
         before: "9 p.m. Marketing launches \"Reels Week\" to promote video posts." +
-          task("In <code>posts</code>, change <b>every</b> post whose <code>type</code> is \"reel\": add <b>100</b> to <code>likes</code> and add <b>\"#reelsweek\"</b> to the end of <code>hashtags</code>. Do both in one command."),
-        answer: 'db.posts.updateMany({ type: "reel" }, { $inc: { likes: 100 }, $push: { hashtags: "#reelsweek" } })',
-        hint: "Many documents → updateMany(filter, update). $inc adds to a number; $push appends one value to an array. Both can go in the same update object.",
+          task("In <code>posts</code>, add <b>100</b> to the <code>likes</code> of <b>every</b> post whose <code>type</code> is \"reel\", in one command."),
+        answer: 'db.posts.updateMany({ type: "reel" }, { $inc: { likes: 100 } })',
+        hint: "Many documents → updateMany(filter, update). $inc adds to a number.",
         after: "matchedCount: 5, modifiedCount: 5. That includes Meera's First dance cover, which now has exactly 100 likes. Remember that number.",
       },
       {
@@ -290,7 +241,7 @@
           task("For the user <code>ananya.reads</code>, <b>remove</b> the <code>age</code> field completely, so it doesn't exist anymore."),
         code: ['db.users.updateOne({ username: "ananya.reads" }, { ', B("$unset", ["$set", "$pull", "$rename"]), ': { age: "" } })'],
         hint: "The opposite of $set. The value you give (\"\") is ignored; only the field name matters.",
-        after: "Ananya's document has no age field now. Open \"See the data right now\": her age shows —.",
+        after: "Ananya's document has no age field now. Open \"See the data\" below the terminal: her age shows —.",
       },
       {
         chapter: "night", op: "$rename", mode: "pick",
@@ -301,87 +252,31 @@
         hint: "The operator that gives a field a new name. The empty filter {} matches every user.",
         after: "All 9 users changed: \"Riya Sharma\" now sits under <code>fullName</code>. Only the field name changed; no value was retyped.",
       },
+      // ================= UPDATE ONE + UPSERT =================
       {
-        chapter: "night", op: "$currentDate + $type", mode: "pick",
-        screen: { time: "21:55", title: "meera.dance" },
-        before: "9:55 p.m. Meera closes the app. The server records when she was last active, plus an exact timestamp for the sync job." +
-          task("For <code>meera.dance</code>, stamp <code>lastActive</code> and <code>lastSync</code> with the <b>server's clock</b>: <code>lastActive</code> as a date, <code>lastSync</code> as a <b>timestamp</b>."),
-        code: ['db.users.updateOne({ username: "meera.dance" }, { ', B("$currentDate", ["$set", "$inc", "$max"]), ": { lastActive: true, lastSync: { ", B("$type", ["$as", "$date", "$eq"]), ': "timestamp" } } })'],
-        hint: "First blank: the operator that writes the server's current time. Second blank: the key inside it that picks \"date\" or \"timestamp\".",
-        after: "<code>lastActive</code> is an ISODate (<code>true</code> means a Date) and <code>lastSync</code> is a <code>Timestamp({ t: …, i: 1 })</code>. The server filled in the time; you never typed it.",
-      },
-      // ================= ARRAY UPDATES =================
-      {
-        chapter: "tags", op: "updateOne()", mode: "choice", trap: true,
+        chapter: "tags", op: "updateOne()", mode: "write",
         screen: { time: "22:00", title: "neha_eats" },
-        before: "10 p.m. The food blogger <code>neha_eats</code> gets her blue tick and picks two new interests." +
-          task("Update <code>neha_eats</code>: set <code>verified</code> to <b>true</b>, and add <b>\"baking\"</b> and <b>\"cafes\"</b> to <code>interests</code> as <b>two separate</b> items. <b>Pick the query.</b>"),
+        before: "10 p.m. The food blogger <code>neha_eats</code> gets her blue tick." +
+          task("In <code>users</code>, make <code>verified</code> <b>true</b> for the user <code>neha_eats</code>. Nothing else about her changes."),
+        answer: 'db.users.updateOne({ username: "neha_eats" }, { $set: { verified: true } })',
+        hint: "One user → updateOne(filter, update). $set writes a field's new value.",
+        after: "matchedCount: 1, modifiedCount: 1. Neha's profile now shows the blue tick, and every other field is untouched.",
+      },
+      {
+        chapter: "tags", op: "upsert", mode: "choice",
+        screen: { time: "22:10", title: "ishaan.films" },
+        before: "10:10 p.m. Ishaan (<code>ishaan.films</code>) taps <b>Save</b> on his profile from a new phone. The app can't tell whether his account exists yet, so it must update it if it's there and create it if it isn't." +
+          task("Save <code>city: \"Jaipur\"</code> and <code>followers: 0</code> for the username <code>ishaan.films</code>, creating the document if it doesn't exist. One command. <b>Pick the query.</b>"),
         options: [
-          { code: 'db.users.updateOne({ username: "neha_eats" }, { $set: { verified: true }, $push: { interests: ["baking", "cafes"] } })', why: "$push adds its value as ONE element, so the whole list lands inside the list: [\"food\", \"travel\", [\"baking\", \"cafes\"]]." },
-          { code: 'db.users.updateOne({ username: "neha_eats" }, { $set: { verified: true, interests: ["baking", "cafes"] } })', why: "$set replaces the whole array, so food and travel are lost." },
-          { code: 'db.users.updateOne({ username: "neha_eats" }, { $set: { verified: true }, $push: { interests: "baking", interests: "cafes" } })', why: "An object can't have the same key twice: JavaScript keeps only the last one, so only \"cafes\" is added." },
-          { code: 'db.users.updateOne({ username: "neha_eats" }, { $set: { verified: true }, $push: { interests: { $each: ["baking", "cafes"] } } })', ok: true },
+          { code: 'db.users.updateOne({ username: "ishaan.films" }, { $set: { city: "Jaipur", followers: 0 } })', why: "There's no ishaan.films yet, so the filter matches nothing: matchedCount 0, and nothing is saved." },
+          { code: 'db.users.insertOne({ username: "ishaan.films", city: "Jaipur", followers: 0 })', why: "It works today, but if the account already existed this would create a second ishaan.films. The task needs update-or-create." },
+          { code: 'db.users.updateOne({ username: "ishaan.films" }, { $set: { city: "Jaipur", followers: 0 }, upsert: true })', why: "upsert is an option, not part of the update. It goes in a third argument: { upsert: true }." },
+          { code: 'db.users.updateOne({ username: "ishaan.films" }, { $set: { city: "Jaipur", followers: 0 } }, { upsert: true })', ok: true },
         ],
-        hint: "$push alone adds ONE value. To add each item of a list, wrap it in { $each: [...] }.",
-        after: "Neha is verified and her interests are food, travel, baking, cafes.",
-        trapNote: "Without $each, $push adds the whole list as ONE element: [\"food\", \"travel\", [\"baking\", \"cafes\"]].",
+        hint: "updateOne takes a third argument for options. One of them creates the document when nothing matches.",
+        after: "matchedCount 0, upsertedCount 1: nothing matched, so MongoDB created the document from the filter's username plus the $set fields, with a new <code>_id</code>. Run it again and it would just update him.",
       },
-      {
-        chapter: "tags", op: "$pullAll", mode: "pick",
-        screen: { time: "22:10", title: "neha_eats" },
-        before: "10:10 p.m. Neha changes her mind: her profile should be only about food and baking." +
-          task("For <code>neha_eats</code>, remove <b>both</b> \"travel\" and \"cafes\" from <code>interests</code> in <b>one</b> operation."),
-        code: ['db.users.updateOne({ username: "neha_eats" }, { ', B("$pullAll", ["$pull", "$pop", "$unset"]), ': { interests: ["travel", "cafes"] } })'],
-        hint: "$pull removes one value (or whatever matches a condition). This operator removes every value in a list.",
-        after: "Neha's interests: food, baking.",
-      },
-      {
-        chapter: "tags", op: "$addToSet", mode: "pick", trap: true,
-        screen: { time: "22:20", title: "riya_codes" },
-        before: "10:20 p.m. Riya taps the \"music\" interest by accident. The app must never show the same interest twice." +
-          task("For <code>riya_codes</code>, add \"music\" to <code>interests</code> <b>only if it isn't already there</b>. Her interests are coding and music, so watch modifiedCount."),
-        code: ['db.users.updateOne({ username: "riya_codes" }, { ', B("$addToSet", ["$push", "$set", "$inc"]), ': { interests: "music" } })'],
-        hint: "Like $push, but it skips values the array already has.",
-        after: "matchedCount: 1, modifiedCount: 0. Riya was found, but \"music\" was already there, so nothing changed. That's exactly what we wanted.",
-        trapNote: "With $push, Riya would now have music twice: [\"coding\", \"music\", \"music\"].",
-      },
-      {
-        chapter: "tags", op: "$pop", mode: "pick",
-        screen: { time: "22:30", title: "arjun.clicks" },
-        before: "10:30 p.m. Arjun wants to focus on photography only. His interests are [\"photography\", \"travel\"]." +
-          task("For <code>arjun.clicks</code>, remove the <b>last</b> item of <code>interests</code>. Pick the operator, then the number that means \"last\"."),
-        code: ['db.users.updateOne({ username: "arjun.clicks" }, { ', B("$pop", ["$pull", "$unset", "$slice"]), ": { interests: ", B("1", ["-1", "0", "2"]), " } })"],
-        hint: "This operator removes an item from one end of an array. 1 means the last item, -1 means the first.",
-        after: "\"travel\" is gone, so Arjun's only interest is photography. With -1, \"photography\" would have gone instead.",
-      },
-      {
-        chapter: "tags", op: "$push + $each, $sort, $slice", mode: "pick",
-        screen: { time: "22:40", title: "meera.dance" },
-        before: "10:40 p.m. Meera adds three dance styles. Her profile has room for only 3 interests, in alphabetical order. Right now her interests are [\"dance\"]." +
-          task("For <code>meera.dance</code>, add \"kathak\", \"bollywood\" and \"hip-hop\" to <code>interests</code>, put the list in <b>A→Z order</b>, and <b>keep only the first 3</b>. One command."),
-        code: ['db.users.updateOne({ username: "meera.dance" }, { ', B("$push", ["$addToSet", "$set", "$each"]), ": { interests: { ", B("$each", ["$in", "$all", "$push"]), ': ["kathak", "bollywood", "hip-hop"], ', B("$sort", ["$order", "$asc", "$slice"]), ": 1, ", B("$slice", ["$limit", "$size", "$sort"]), ": 3 } } })"],
-        hint: "Adding a list → $push with $each. Then $sort: 1 sorts A→Z, and $slice: 3 keeps the first 3.",
-        after: "Sorted, the four are bollywood, dance, hip-hop, kathak. <code>$slice: 3</code> cuts the last one, so Meera's interests are bollywood, dance, hip-hop.",
-      },
-      {
-        chapter: "tags", op: "$pull", mode: "pick",
-        screen: { time: "22:50", title: "dev_memes" },
-        before: "10:50 p.m. Dev decides his reel \"When the code works on first try\" isn't really a meme." +
-          task("From that post's <code>hashtags</code>, remove the value <b>\"#memes\"</b>. The other hashtags stay."),
-        code: ['db.posts.updateOne({ caption: "When the code works on first try" }, { ', B("$pull", ["$pullAll", "$pop", "$unset"]), ': { hashtags: "#memes" } })'],
-        hint: "The opposite of $push: it removes every element equal to the value.",
-        after: "Its hashtags are now #coding and #reelsweek.",
-      },
-      {
-        chapter: "tags", op: "positional $", mode: "pick",
-        screen: { time: "22:55", title: "riya_codes" },
-        before: "10:55 p.m. Riya joins a coding challenge. On her \"Late night debugging sessions\" post, she wants the tag #coding to become #100DaysOfCode." +
-          task("In that post's <code>hashtags</code>, <b>replace</b> the element \"#coding\" with \"#100DaysOfCode\", in the same position. The filter already finds \"#coding\"; pick the field path that points to <b>the position it matched</b>."),
-        code: ['db.posts.updateOne({ caption: "Late night debugging sessions", hashtags: "#coding" }, { $set: { "', B("hashtags.$", ["hashtags", "hashtags.1", "$.hashtags"]), '": "#100DaysOfCode" } })'],
-        hint: "The array field, a dot, then $. That $ stands for the position where the filter found \"#coding\".",
-        after: "\"#coding\" became \"#100DaysOfCode\" in the same spot. Without the positional <code>$</code>, you'd need to know the index yourself, as in \"hashtags.0\".",
-      },
-      // ================= REPLACE + DELETE =================
+      // ================= DELETE =================
       {
         chapter: "late", op: "deleteOne()", mode: "bug",
         screen: { time: "23:00", title: "riya_codes" },
@@ -396,16 +291,6 @@
         ],
         hint: "There's a delete method that stops after the first match.",
         after: "deletedCount: 1. deleteOne removes the <b>first</b> match it finds, here her oldest post, 'Shipped my first full-stack app!'. Her debugging photo stays.",
-      },
-      {
-        chapter: "late", op: "replaceOne()", mode: "write",
-        screen: { time: "23:30", title: "rohan_travels" },
-        before: "11:30 p.m. Rohan turns rohan_travels into a business account. The new app sends his <b>whole</b> new profile, which takes the place of the old one." +
-          task("In <code>users</code>, swap the <b>whole</b> document of <code>rohan_travels</code> for the document below. No $ operators.") +
-          pre('{ username: "rohan_travels", fullName: "Rohan Das Travels", city: "Kolkata",\n  followers: 7800, verified: false, accountType: "business" }'),
-        answer: 'db.users.replaceOne({ username: "rohan_travels" }, { username: "rohan_travels", fullName: "Rohan Das Travels", city: "Kolkata", followers: 7800, verified: false, accountType: "business" })',
-        hint: "replaceOne(filter, newDocument). The new document is just plain fields, no $set.",
-        after: "matchedCount: 1, modifiedCount: 1. Same <code>_id</code>, completely new body: he's a business account now, and his interests are gone because the new document didn't include them. With updateOne and $set, fields you didn't mention would have stayed.",
       },
       {
         chapter: "late", op: "deleteMany()", mode: "write",

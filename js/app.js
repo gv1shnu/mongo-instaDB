@@ -31,7 +31,9 @@
   // ---------- progress ----------
   // Lives in the browser, one copy per signed-in student (shared lab computers), plus one
   // for whoever hasn't signed in. answers[i] = { ok, given, sel } once slide i is submitted.
-  const BASE_KEY = "instadb-exam-v1";
+  // DECK names this set of slides; answers saved for a different set are never mixed in
+  const DECK = "common-24";
+  const BASE_KEY = "instadb-exam-" + DECK;
   let key = BASE_KEY;
   const fresh = () => ({ at: 0, answers: {}, hints: [], activity: { tabs: 0, away: 0 } });
   function load(k) {
@@ -51,7 +53,7 @@
   const total = () => steps.reduce((s, st, i) => s + pointsFor(i), 0);
   const firstOpen = () => { for (let i = 0; i < N; i++) if (!answer(i)) return i; return N; };
   const snapshot = () => ({
-    slides: N, at: progress.at, hints: progress.hints, activity: progress.activity, board: finished(),
+    deck: DECK, slides: N, at: progress.at, hints: progress.hints, activity: progress.activity, board: finished(),
     answers: Object.fromEntries(Object.entries(progress.answers).map(([i, a]) => [i, { ok: a.ok, given: a.given }])),
   });
   // the score sheet keeps each student's first answer per slide; adopt it, so clearing the
@@ -128,7 +130,6 @@
     renderProgress();
     renderData();
     renderAccount();
-    $("restart").hidden = Score.enabled; // an exam can't be restarted once answers are in
     Score.renderButtons();
   }
 
@@ -608,14 +609,6 @@
     },
   });
 
-  // practice mode only (no score sheet): start again
-  function restart() {
-    if (answeredCount() && !confirm("Restart the day from the first slide? Your answers on this device will be cleared.")) return;
-    progress = fresh();
-    save();
-    go(0);
-  }
-
   // ---------- activity: tab and window switches ----------
   // Recorded only for signed-in students, who are told so on the sign-in panel.
   let hiddenAt = 0, blurAt = 0;
@@ -651,7 +644,6 @@
   // ---------- wiring ----------
   $("prev").onclick = prev;
   $("next").onclick = next;
-  $("restart").onclick = restart;
   $("phone-toggle").onclick = () => $("phone-col").classList.toggle("open");
   window.addEventListener("hashchange", () => { const s = slideFromHash(); if (s !== null && s !== progress.at) go(s); });
 

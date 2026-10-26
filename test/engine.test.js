@@ -91,6 +91,13 @@ t('db.users.updateOne({ username: "neha_eats" }, { $set: { "interests.$": "x" } 
 t('db.users.updateOne({ username: "neha_eats" }, { $pop: { interests: 2 } })', "MongoServerError: $pop takes 1 (remove the last item) or -1 (remove the first item)");
 t('db.users.updateOne({ username: "neha_eats" }, { $push: { interests: { $sort: 1 } } })', "MongoServerError: $push modifiers need $each with an array, e.g. { $each: [ ... ] }");
 t('db.users.updateOne({ username: "neha_eats" }, { $rename: { age: 5 } })', "MongoServerError: $rename needs the new field name as text, e.g. { $rename: { age: \"newName\" } }");
+// upsert
+td("upsert creates the document from the filter and $set", 'db.users.updateOne({ username: "ishaan.films" }, { $set: { city: "Jaipur", followers: 0 } }, { upsert: true })', "ishaan.films", (u) => [Object.keys(u), u.city], [["_id", "username", "city", "followers"], "Jaipur"]);
+t('db.users.updateOne({ username: "ishaan.films" }, { $set: { city: "Jaipur" } }, { upsert: true })', [0, 1], (v) => [v.matchedCount, v.upsertedCount]);
+t('db.users.updateOne({ username: "neha_eats" }, { $set: { city: "Pune" } }, { upsert: true })', [1, 0], (v) => [v.matchedCount, v.upsertedCount]);
+t('db.users.updateOne({ username: "ishaan.films" }, { $set: { city: "Jaipur" } })', [0, 0], (v) => [v.matchedCount, v.upsertedCount]);
+t('db.users.updateOne({ username: "x" }, { $set: { a: 1 }, upsert: true })', "MongoServerError: Unknown modifier: upsert. upsert is an option: it goes in a third argument, updateOne(filter, update, { upsert: true })");
+t('db.users.updateOne({ username: "x" }, { $set: { a: 1 } }, { upsurt: true })', "MongoServerError: unknown update option: upsurt (this lab only uses { upsert: true })");
 // replaceOne
 td("replaceOne keeps only the new fields", 'db.users.replaceOne({ username: "neha_eats" }, { username: "neha_eats", followers: 1 })', "neha_eats", (u) => Object.keys(u), ["username", "followers"]);
 { const r = run('db.users.replaceOne({ username: "meera" }, { username: "meera" })', S); const ok = r.ok && r.value.matchedCount === 0; if (!ok) fail++; console.log((ok ? "ok  " : "FAIL") + "  replaceOne with no match changes nothing"); }

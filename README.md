@@ -2,41 +2,44 @@
 
 A story-driven slide-deck exam on MongoDB CRUD (Lecture 2) and query and update operators (Lecture 3), built on the instaDB seed data used in the lab.
 
-Students follow instaDB through one day in 35 slides, one question per slide, with **Prev / Next**. A new user, Meera, signs up at 7 a.m., and her account and posts carry through the rest of the day. A phone-style preview stays beside every slide and re-renders the app from whatever the query returned or changed, wrong answers included.
+Students follow instaDB through one day in 24 slides, one question per slide, with **Prev / Next**. A new user, Meera, signs up at 7 a.m., and her account and posts carry through the rest of the day. A phone-style preview stays beside every slide and re-renders the app from whatever the query returned or changed, wrong answers included.
 
 | Slide type | Count | What the student does |
 |---|---|---|
 | ✍️ write the query | 5 | Types the whole CRUD query. Checked by running it, so equivalent answers pass (fields in any order). Given documents have a Copy button, so the time goes into the query, not retyping fields. |
-| 🧩 pick the operator | 21 | Taps a chip for each blank in a given query. |
-| ☑️ choose the query | 5 | Picks the query that does the task out of four. |
+| 🧩 pick the operator | 12 | Taps a chip for each blank in a given query. |
+| ☑️ choose the query | 3 | Picks the query that does the task out of four. |
 | 🐞 fix the bug | 2 | Sees a broken query and what mongosh said, then picks the fix. |
 | 🔮 predict | 2 | Predicts what a given query will do, then watches it run. |
+
+The slides cover only what every section was taught: Chapter 2 of the [Atlas Shell Lab](https://edusatyaki.github.io/MongoDB-Atlas-Shell-Lab/) (CRUD) and Chapter 3 up to the field update operators, without regex and `$currentDate`. `$min` and `$max` were taught in theory only, so they're pick-the-operator slides.
 
 Every option is a real query: what the student submits runs on the data and shows up on the phone and in the terminal.
 
 **Exam rules**
 - **One try per slide.** The student picks or types an answer and presses **Submit**; the slide then locks with ✓ or ✗. Next unlocks once the slide is answered, and slides can't be skipped.
-- **Points:** 10 for a right answer, 5 if the slide's hint was used, 0 if wrong. 35 slides, 350 points.
-- **No solutions until the end.** While the exam is in progress, a wrong answer only says it's wrong. Once all 35 slides are answered, the results slide shows:
+- **Points:** 10 for a right answer, 5 if the slide's hint was used, 0 if wrong. 24 slides, 240 points.
+- **No solutions until the end.** While the exam is in progress, a wrong answer only says it's wrong. Once all 24 slides are answered, the results slide shows:
   - the score
   - a breakdown by question type and by part of the day
   - the class leaderboard: top 10 by first name, plus the student's own rank and the class average
   - every solution: the student's answer, the right answer, why theirs was wrong, and what the query does
 
   Going back to a slide then shows its solution too.
-- **No restart** while score tracking is on, so the exam can't be retaken after seeing the solutions.
+- **One attempt.** There's no restart, and the score sheet keeps each student's first answer per slide, so the exam can't be retaken after seeing the solutions.
 - The answers are hidden on screen, but they're in the page's code. A student who knows the browser's developer tools could find them. Fine for a lab exam; for anything higher-stakes, marking would have to move to the server.
 
 **Covers:**
 - **Create:** `insertOne`, `insertMany`
-- **Read:** `find`, `findOne`, `sort`, `skip`, `limit`
-- **Update:** `updateOne`, `updateMany`, `replaceOne`
+- **Read:** `find`
+- **Update:** `updateOne`, `updateMany`, upsert (`{ upsert: true }`)
 - **Delete:** `deleteOne`, `deleteMany`
-- **Comparison:** `$eq`, `$ne`, `$gt`, `$gte`, `$lt`, `$lte`, `$in`, `$nin`
+- **Comparison:** `$eq`, `$ne`, `$gt`, `$gte`, `$lt`, `$lte`, `$in`
 - **Logical:** `$and`, `$or`, `$not`, `$nor`, `$exists`
-- **Regex and arrays:** `$regex`, `$options`, `$all`, `$elemMatch`
-- **Field updates:** `$set`, `$unset`, `$rename`, `$inc`, `$mul`, `$min`, `$max`, `$currentDate` (Date and timestamp)
-- **Array updates:** `$push` with `$each`, `$sort`, `$slice`; `$addToSet`, `$pop`, `$pull`, `$pullAll`, positional `$`
+- **Array queries:** `$all`, `$elemMatch`
+- **Field updates:** `$set`, `$unset`, `$rename`, `$inc`, `$mul`, `$min`, `$max`
+
+The engine also supports regex, `$nin`, the array update operators, positional `$`, `$currentDate`, `replaceOne`, `findOne` and `sort`/`skip`/`limit`, so those topics can come back as slides once they've been taught.
 
 ## How it works
 
@@ -66,7 +69,7 @@ Every option is a real query: what the student submits runs on the data and show
 Students sign in with their **university Google account**, and each one's score lands in a Google Sheet you own. Only `@nst.rishihood.edu.in` (students) and `@rishihood.edu.in` (staff) accounts can sign in; personal Gmail and any other domain are refused. Staff who sign in to test get a row in the sheet too.
 
 **What you get in the sheet**
-- **Scores:** one row per student: score (out of 350), right, wrong, hints used, slides answered, the slide they're on, finished or not, first seen, last update and when they finished. Then **Tab switches**, **Time away (s)**, and **Answers**, where the script keeps each answer.
+- **Scores:** one row per student: score (out of 240), right, wrong, hints used, slides answered, the slide they're on, finished or not, first seen, last update and when they finished. Then **Tab switches**, **Time away (s)**, and **Answers**, where the script keeps each answer.
 - **Attempts:** one row per answer (right or wrong, and what they picked, for example `C: db.posts.insertMany(...)`) and per hint used. This shows which wrong answers are common.
   It also gets a row each time a student:
   - **left tab:** switched to another tab or minimised the browser, with how long they were away
@@ -75,12 +78,12 @@ Students sign in with their **university Google account**, and each one's score 
 **About the activity tracking**
 - Students are told on the sign-in panel that switching tabs or windows is recorded.
 - Only signed-in students are tracked.
-- The counts never go down: restarting the day or clearing the browser doesn't reset them in the sheet.
+- The counts never go down: clearing the browser doesn't reset them in the sheet.
 - These are signals to look at, not proof of cheating: leaving the tab can mean anything from a notification to looking something up.
 
-**Score** = 10 per right answer, 5 if the hint was used, 0 if wrong; out of 350.
+**Score** = 10 per right answer, 5 if the hint was used, 0 if wrong; out of 240.
 
-**The first answer counts.** The script keeps the first answer it receives for each slide. Clearing the browser, signing in on another device, or answering again can't change it. Signing in elsewhere brings a student's answers back. The leaderboard lists only students (`@nst.rishihood.edu.in`) who have answered every slide. Ties share a rank.
+**The first answer counts.** The script keeps the first answer it receives for each slide. Clearing the browser, signing in on another device, or answering again can't change it. Signing in elsewhere brings a student's answers back. The leaderboard lists only students (`@nst.rishihood.edu.in`) who have answered every slide of the current version of the deck. Ties share a rank. Changing the slides gives the deck a new version name (`DECK` in `js/app.js`): answers saved for an older version don't carry over.
 
 If your sheet has a **Scores** tab from an earlier version, the script renames it to "Scores (old …)" and starts a fresh one; nothing is deleted.
 
@@ -140,4 +143,4 @@ The seed data in `js/data.js` is identical to the lab's `insta_seed.js`.
 
 The story test also fails if a wrong option or chip gives exactly the same result as the right answer without a `why` note explaining the difference.
 
-A typical run should take about 25 minutes (an estimate from the slide content, not a timed run): roughly 20 for a fast student and 35 for one who struggles.
+A typical run should take about 20 minutes (an estimate from the slide content, not a timed run): roughly 15 for a fast student and 25–30 for one who struggles.
