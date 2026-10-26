@@ -19,6 +19,7 @@ Every option is a real query: what the student submits runs on the data and show
 **Exam rules**
 - **One try per slide.** The student picks or types an answer and presses **Submit**; the slide then locks with ✓ or ✗. Next unlocks once the slide is answered, and slides can't be skipped.
 - **Points:** 10 for a right answer, 5 if the slide's hint was used, 0 if wrong. 24 slides, 240 points.
+- **A timer on every slide:** 90 s for a write slide, 45 s for a fill-in-the-blank, 60 s for an MCQ (at most about 23½ minutes for all 24). When it runs out, whatever the student has selected or typed is submitted; with nothing selected, the slide counts as wrong. The deadline is set when the slide first opens, so going back or reloading doesn't reset it. Change the times in `TIME` at the top of `js/app.js`.
 - **No solutions until the end.** While the exam is in progress, a wrong answer only says it's wrong. Once all 24 slides are answered, the results slide shows:
   - the score
   - a breakdown by question type and by part of the day
@@ -70,7 +71,7 @@ Students sign in with their **university Google account**, and each one's score 
 
 **What you get in the sheet**
 - **Scores:** one row per student: score (out of 240), right, wrong, hints used, slides answered, the slide they're on, finished or not, first seen, last update and when they finished. Then **Tab switches**, **Time away (s)**, and **Answers**, where the script keeps each answer.
-- **Attempts:** one row per answer (right or wrong, and what they picked, for example `C: db.posts.insertMany(...)`) and per hint used. This shows which wrong answers are common.
+- **Attempts:** one row per answer (right or wrong, and what they picked, for example `C: db.posts.insertMany(...)`), per hint used, and per slide that timed out with no answer. This shows which wrong answers are common.
   It also gets a row each time a student:
   - **left tab:** switched to another tab or minimised the browser, with how long they were away
   - **left window:** put another app or window in front for more than 3 seconds

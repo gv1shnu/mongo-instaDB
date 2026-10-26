@@ -82,6 +82,9 @@ let r = post({ idToken: "good", slides: S, at: 4, hints: [2], answers: ans([[0, 
 expect("score: 10 + 0 + 5", [r.ok, r.score, r.outOf], [true, 15, 350]);
 expect("score row", row().slice(0, 10), ["asha@nst.rishihood.edu.in", "Asha Rao", 15, 350, 2, 1, 1, 3, 4, "no"]);
 expect("answers come back to the browser", r.answers, { 0: { ok: true, given: "$gt" }, 1: { ok: false, given: "B: ..." }, 2: { ok: true, given: "x" } });
+post({ idToken: "good", slides: S, events: [{ id: "t1", slide: 5, op: "$gt", kind: "timeout" }] });
+expect("time-outs are logged", sheets.Attempts.rows.at(-1).slice(2, 5), [6, "$gt", "timeout"]);
+sheets.Attempts.rows.splice(-1, 1);
 expect("attempts logged: wrong and hint", sheets.Attempts.rows.slice(1).map((x) => [x[2], x[4], x[5]]), [[2, "wrong", "C: db.posts.insertMany(...)"], [3, "hint", ""]]);
 
 r = post({ idToken: "good", slides: S, at: 4, answers: ans([[1, true, "changed my mind"], [3, true]]) });

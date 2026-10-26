@@ -6,8 +6,8 @@
  * accounts from the university's email domains, and writes:
  *   - "Scores":   one row per student, updated in place. The first answer to
  *                 each slide is kept, so retaking can't change it.
- *   - "Attempts": one row per answer (right or wrong), hint, and tab or
- *                 window switch
+ *   - "Attempts": one row per answer (right or wrong), hint, time-out, and
+ *                 tab or window switch
  * Once a student has answered every slide, it also sends back the leaderboard.
  *
  * Setup: see "Score tracking" in the project README.
@@ -197,7 +197,7 @@ function writeAttempts_(user, events) {
     text_(user.email, 200),
     (parseInt(ev.slide, 10) || 0) + 1,
     text_(ev.op, 60),
-    ["right", "wrong", "hint"].concat(ACTIVITY_KINDS).indexOf(ev.kind) >= 0 ? ev.kind : "other",
+    ["right", "wrong", "hint", "timeout"].concat(ACTIVITY_KINDS).indexOf(ev.kind) >= 0 ? ev.kind : "other",
     text_(ev.answer, 300),
     text_(ev.id, 40),
   ]);

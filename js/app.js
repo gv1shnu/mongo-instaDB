@@ -9,6 +9,9 @@
   const { assemble, canonical, stepNow, chipsFor } = window;
   const steps = STORY.steps, N = steps.length, LAST = N + 1;
   const POINTS = 10, HINT_COST = 5, MAX = POINTS * N;
+  // seconds per slide; when they run out, the current selection is submitted (or the slide counts as wrong)
+  const TIME = { write: 90, pick: 45, choice: 60, bug: 60, predict: 60 };
+  const TIMEOUT = "(no answer: time ran out)";
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const blanksOf = (st) => st.code.filter((p) => typeof p !== "string");
@@ -35,7 +38,8 @@
   const DECK = "common-24";
   const BASE_KEY = "instadb-exam-" + DECK;
   let key = BASE_KEY;
-  const fresh = () => ({ at: 0, answers: {}, hints: [], activity: { tabs: 0, away: 0 } });
+  // deadlines[i] is set when slide i first opens, so reloading or going back doesn't reset its timer
+  const fresh = () => ({ at: 0, answers: {}, hints: [], deadlines: {}, activity: { tabs: 0, away: 0 } });
   function load(k) {
     try {
       const saved = JSON.parse(localStorage.getItem(k));
@@ -121,6 +125,7 @@
   const plainTitle = (t) => (finished() ? t : t.replace(/\s*\([^)]*\)\s*$/, ""));
 
   function render() {
+    stopTimer();
     const s = progress.at;
     if (s === 0) renderIntro();
     else if (gated()) renderGate();
@@ -169,6 +174,7 @@
     <ul>
       <li><b>One try per slide.</b> Pick or type your answer, then press <b>Submit</b>. It locks after that.</li>
       <li><b>${POINTS} points</b> for each right answer, <b>${POINTS - HINT_COST}</b> if you used the hint, <b>0</b> if it's wrong. ${N} slides, ${MAX} points.</li>
+      <li><b>Every slide has a timer:</b> ${TIME.write} s to write a query, ${TIME.pick} s to fill in a blank, ${TIME.choice} s for a multiple-choice question. When it runs out, whatever you've picked or typed is submitted; if nothing, the slide counts as wrong. Leaving the slide or reloading doesn't stop it.</li>
       <li><b>Solutions come at the end.</b> You'll see every answer, why it's right, and where you stand on the class leaderboard once all ${N} slides are answered.</li>
     </ul></div>`;
 
@@ -242,7 +248,7 @@
     const pts = a ? `<span class="tag ${a.ok ? "pts-ok" : "pts-bad"}">${a.ok ? `+${pointsFor(i)}` : "0"} points</span>` : "";
     // the topic tag (e.g. "insertOne()") names the answer, so it only appears once the exam is done
     $("slide").innerHTML = `<div class="eyebrow">${esc(plainTitle(chapterOf(st).title))}</div>
-      <div class="step-meta"><span class="num">${i + 1}</span><span class="tag mode-${st.mode}">${icon} ${label}</span>${finished() ? `<span class="tag">${esc(st.op)}</span>` : ""}${st.trap ? '<span class="tag warn">⚠️ predict first</span>' : ""}${hinted(i) ? '<span class="tag hint-used">hint used</span>' : ""}${pts}</div>
+      <div class="step-meta"><span class="num">${i + 1}</span><span class="tag mode-${st.mode}">${icon} ${label}</span>${finished() ? `<span class="tag">${esc(st.op)}</span>` : ""}${st.trap ? '<span class="tag warn">⚠️ predict first</span>' : ""}${hinted(i) ? '<span class="tag hint-used">hint used</span>' : ""}${pts}${a ? "" : '<span class="timer" id="timer" role="timer" aria-live="off"></span>'}</div>
       <div class="before big">${st.before}</div>
       <div id="widget"></div>
       <div class="hint-box" id="hint-box" ${hinted(i) ? "" : "hidden"}><b>Hint:</b> ${esc(st.hint)}</div>
@@ -262,7 +268,39 @@
       if ($("hint")) $("hint").onclick = () => useHint(i);
       resetTerminal();
       phone({ idle: true, before: states[i], spec: st.screen });
+      startTimer(i);
     }
+  }
+
+  // ---------- per-slide timer ----------
+  let timer = null;
+  const stopTimer = () => { clearInterval(timer); timer = null; };
+  function startTimer(i) {
+    if (!progress.deadlines) progress.deadlines = {};
+    if (!progress.deadlines[i]) { progress.deadlines[i] = Date.now() + TIME[steps[i].mode] * 1000; save(); }
+    const tick = () => {
+      const left = Math.max(0, Math.ceil((progress.deadlines[i] - Date.now()) / 1000));
+      const el = $("timer");
+      if (el) {
+        el.textContent = `⏱ ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
+        el.className = "timer" + (left <= 5 ? " urgent" : left <= 15 ? " low" : "");
+      }
+      if (left <= 0) timeUp(i);
+    };
+    tick();
+    if (!answer(i)) timer = setInterval(tick, 250);
+  }
+  function timeUp(i) {
+    stopTimer();
+    if (answer(i) || progress.at !== i + 1) return;
+    const st = steps[i];
+    if (WIDGETS[st.mode].value(i) != null) return submit(i, true);
+    progress.answers[i] = { ok: false, given: TIMEOUT, sel: null, timeout: true };
+    save();
+    record(i, "timeout", "");
+    ui = {};
+    renderStep(i);
+    renderNav(); renderProgress(); renderAccount();
   }
   // the widget calls this whenever the selection changes
   const selectionChanged = (i) => { if ($("submit")) $("submit").disabled = WIDGETS[steps[i].mode].value(i) == null; };
@@ -278,14 +316,15 @@
     meta.insertAdjacentHTML("beforeend", '<span class="tag hint-used">hint used</span>');
   }
 
-  function submit(i) {
+  function submit(i, timedOut) {
     const st = steps[i], w = WIDGETS[st.mode], sel = w.value(i);
     if (sel == null || answer(i)) return;
+    stopTimer();
     const code = w.codeFor(i, sel), res = runAt(code, i);
     const ok = w.correct(i, sel, res);
-    progress.answers[i] = { ok, given: w.label(i, sel), sel };
+    progress.answers[i] = { ok, given: w.label(i, sel), sel, timeout: !!timedOut };
     save();
-    record(i, ok ? "right" : "wrong", progress.answers[i].given + (hinted(i) ? " (after hint)" : ""));
+    record(i, ok ? "right" : "wrong", progress.answers[i].given + (hinted(i) ? " (after hint)" : "") + (timedOut ? " (submitted when time ran out)" : ""));
     ui = {};
     renderStep(i);
     renderNav(); renderProgress(); renderAccount();
@@ -305,8 +344,9 @@
     }
     const last = i + 1 === N;
     const nextBtn = `<div class="actions"><button class="btn primary" id="continue">${last ? "See results →" : "Next slide →"}</button></div>`;
-    if (a.ok) feedback("ok", `Correct ✓ · +${pointsFor(i)} points${hinted(i) ? " (hint used)" : ""}`, st.after, nextBtn);
-    else feedback("bad", "Not right · 0 points", finished()
+    const late = a.timeout ? (a.sel != null ? "⏱ Time's up: your answer was submitted. " : "⏱ Time's up. ") : "";
+    if (a.ok) feedback("ok", `${late}Correct ✓ · +${pointsFor(i)} points${hinted(i) ? " (hint used)" : ""}`, st.after, nextBtn);
+    else feedback("bad", `${late}${a.given === TIMEOUT ? "No answer" : "Not right"} · 0 points`, finished()
       ? "The solution is below."
       : `You'll see the right answer and why once you've answered all ${N} slides.`, nextBtn);
     $("continue").onclick = next;

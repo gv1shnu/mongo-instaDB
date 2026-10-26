@@ -405,3 +405,11 @@ div.before.big { margin: 8px 0 16px; }
 .sol-code mark { background: #ffe9a8; color: #1f1530; border-radius: 3px; padding: 0 2px; }
 #solution .sol { margin-top: 14px; }
 @media (max-width: 560px) { .sol-body { padding-left: 12px; } .score-big b { font-size: 44px; } }
+
+/* per-slide timer */
+.timer { margin-left: auto; font: 700 14px var(--mono); padding: 4px 10px; border-radius: 8px; background: var(--surface-2); color: var(--ink); font-variant-numeric: tabular-nums; }
+.timer.low { background: var(--amber-bg); color: #8a5a00; }
+.timer.urgent { background: var(--bad-bg); color: var(--bad); animation: timerPulse 1s ease-in-out infinite; }
+@media (prefers-color-scheme: dark) { .timer.low { color: var(--amber); } }
+@keyframes timerPulse { 50% { opacity: .55; } }
+@media (prefers-reduced-motion: reduce) { .timer.urgent { animation: none; } }
