@@ -1,12 +1,14 @@
 /**
  * One Day on instaDB: score sheet backend (Google Apps Script web app).
  *
- * The slide deck sends each student's progress here after every answer.
+ * The slide-deck exam sends each student's answers here as they go.
  * This script checks the student's Google sign-in token, accepts only
  * accounts from the university's email domains, and writes:
- *   - "Scores":   one row per student, updated in place
- *   - "Attempts": one row per answer (right, wrong, or "Show answer"), and per
- *                 tab or window switch
+ *   - "Scores":   one row per student, updated in place. The first answer to
+ *                 each slide is kept, so retaking can't change it.
+ *   - "Attempts": one row per answer (right or wrong), hint, and tab or
+ *                 window switch
+ * Once a student has answered every slide, it also sends back the leaderboard.
  *
  * Setup: see "Score tracking" in the project README.
  */
@@ -19,12 +21,17 @@ const SETTINGS = {
   ALLOWED_DOMAINS: ["nst.rishihood.edu.in", "rishihood.edu.in"],
   // Leave empty when this script is bound to the sheet (Extensions → Apps Script)
   SPREADSHEET_ID: "",
+  // Points: a right answer, minus this much if the hint was used; wrong = 0
+  POINTS: 10,
+  HINT_COST: 5,
+  // Only these accounts appear on the leaderboard (students, not staff)
+  LEADERBOARD_DOMAINS: ["nst.rishihood.edu.in"],
+  LEADERBOARD_TOP: 10,
 };
 
-const SCORES_HEADERS = ["Email", "Name", "Score", "Out of", "Solved", "First try", "Answers shown", "Wrong tries",
-  "Current slide", "Finished", "First seen", "Last update", "Solved slides", "Shown slides",
-  "Tab switches", "Time away (s)"];
-const ACTIVITY_COL = 15; // first of the two activity columns
+const SCORES_HEADERS = ["Email", "Name", "Score", "Out of", "Right", "Wrong", "Hints used", "Answered",
+  "Current slide", "Finished", "First seen", "Last update", "Finished at", "Tab switches", "Time away (s)", "Answers"];
+const COL = { firstSeen: 11, finishedAt: 13, activity: 14, answers: 16 };
 const ACTIVITY_KINDS = ["left tab", "left window"];
 const ATTEMPTS_HEADERS = ["Time", "Email", "Slide", "Topic", "Result", "Answer given", "Event id"];
 
@@ -36,16 +43,23 @@ function doPost(e) {
   try {
     const body = JSON.parse((e && e.postData && e.postData.contents) || "{}");
     const user = verifyToken_(body.idToken);
-    const summary = summarize_(body);
     const lock = LockService.getScriptLock();
     lock.waitLock(15000);
+    let s, board = null;
     try {
-      writeScore_(user, summary);
+      const sh = sheet_("Scores", SCORES_HEADERS);
+      const found = sh.getRange("A:A").createTextFinder(user.email).matchEntireCell(true).findNext();
+      const row = found ? found.getRow() : sh.getLastRow() + 1;
+      s = summarize_(body, found ? stored_(sh.getRange(row, COL.answers).getValue()) : null);
+      writeScore_(sh, row, !!found, user, s);
       writeAttempts_(user, body.events);
+      if (body.board && s.finished) board = leaderboard_(sh, user.email);
     } finally {
       lock.releaseLock();
     }
-    return json_({ ok: true, score: summary.score, outOf: summary.outOf });
+    const answers = {};
+    Object.keys(s.answers).forEach((n) => (answers[n] = { ok: s.answers[n].ok, given: s.answers[n].g }));
+    return json_({ ok: true, score: s.score, outOf: s.max, answers: answers, hints: s.hints, finished: s.finished, board: board });
   } catch (err) {
     return json_({ ok: false, code: err.code || 500, error: String(err.message || err) });
   }
@@ -82,24 +96,38 @@ function verifyToken_(token) {
 }
 
 // ---- score ----
-// The browser sends its progress; the score is recomputed here from the slide lists.
-function summarize_(body) {
+function stored_(cell) {
+  try { const v = JSON.parse(cell); if (v && v.a) return v; } catch (e) {}
+  return null;
+}
+
+// The first answer the sheet sees for a slide is the one that counts; later ones are ignored.
+// Hints only add up. Points are recomputed here from the kept answers.
+function summarize_(body, stored) {
   const outOf = Math.max(1, Math.min(200, parseInt(body.slides, 10) || 1));
-  const slides = (list) => (Array.isArray(list) ? list : [])
-    .map((n) => parseInt(n, 10)).filter((n) => n >= 0 && n < outOf)
-    .filter((n, k, a) => a.indexOf(n) === k).sort((a, b) => a - b);
-  const solved = slides(body.solved), shown = slides(body.revealed), firstTry = slides(body.firstTry);
-  let wrong = 0;
-  if (body.wrong && typeof body.wrong === "object") Object.keys(body.wrong).forEach((k) => { wrong += Math.max(0, Math.min(1000, parseInt(body.wrong[k], 10) || 0)); });
-  const at = Math.max(0, Math.min(outOf + 1, parseInt(body.at, 10) || 0));
+  const slide = (k) => { const n = parseInt(k, 10); return n >= 0 && n < outOf ? n : -1; };
+  const answers = {};
+  if (stored) Object.keys(stored.a).forEach((k) => { if (slide(k) >= 0) answers[slide(k)] = { ok: !!stored.a[k].ok, g: String(stored.a[k].g || "") }; });
+  const incoming = body.answers && typeof body.answers === "object" ? body.answers : {};
+  Object.keys(incoming).forEach((k) => {
+    const n = slide(k), v = incoming[k];
+    if (n >= 0 && !answers[n] && v && typeof v === "object") answers[n] = { ok: v.ok === true, g: String(v.given || "").slice(0, 200) };
+  });
+  const hints = [];
+  ((stored && stored.h) || []).concat(Array.isArray(body.hints) ? body.hints : []).forEach((k) => {
+    const n = slide(k);
+    if (n >= 0 && hints.indexOf(n) < 0) hints.push(n);
+  });
+  hints.sort((a, b) => a - b);
+  const done = Object.keys(answers).map(Number);
+  const right = done.filter((n) => answers[n].ok);
+  const score = right.reduce((t, n) => t + (hints.indexOf(n) >= 0 ? SETTINGS.POINTS - SETTINGS.HINT_COST : SETTINGS.POINTS), 0);
   return {
-    outOf: outOf,
-    score: solved.filter((n) => shown.indexOf(n) < 0).length,
-    solved: solved, shown: shown,
-    firstTry: firstTry.filter((n) => solved.indexOf(n) >= 0 && shown.indexOf(n) < 0).length,
-    wrong: wrong,
-    at: at,
-    finished: solved.length === outOf,
+    outOf: outOf, max: outOf * SETTINGS.POINTS, score: score,
+    answers: answers, hints: hints,
+    right: right.length, wrong: done.length - right.length, answered: done.length,
+    at: Math.max(0, Math.min(outOf + 1, parseInt(body.at, 10) || 0)),
+    finished: done.length === outOf,
     activity: ["tabs", "away"].map((k) => Math.max(0, Math.min(1e6, parseInt((body.activity || {})[k], 10) || 0))),
   };
 }
@@ -110,32 +138,51 @@ function book_() {
 function sheet_(name, headers) {
   const book = book_();
   let sh = book.getSheetByName(name);
+  if (sh && sh.getRange(1, 1, 1, headers.length).getValues()[0].join("|") !== headers.join("|")) {
+    // made by an older version of this script, with different columns: keep it, start a new one
+    if (sh.getLastRow() > 1) { sh.setName(name + " (old " + Utilities.formatDate(new Date(), "Asia/Kolkata", "yyyy-MM-dd HH:mm") + ")"); sh = null; }
+    else { sh.getRange(1, 1, 1, headers.length).setValues([headers]); sh.getRange(1, 1, 1, headers.length).setFontWeight("bold"); }
+  }
   if (!sh) {
     sh = book.insertSheet(name);
     sh.appendRow(headers);
     sh.setFrozenRows(1);
     sh.getRange(1, 1, 1, headers.length).setFontWeight("bold");
-  } else if (!sh.getRange(1, headers.length).getValue()) {
-    // a sheet made by an older version of this script: add the new column titles
-    sh.getRange(1, 1, 1, headers.length).setValues([headers]);
-    sh.getRange(1, 1, 1, headers.length).setFontWeight("bold");
   }
   return sh;
 }
 
-function writeScore_(user, s) {
-  const sh = sheet_("Scores", SCORES_HEADERS);
+function writeScore_(sh, row, found, user, s) {
   const now = new Date();
-  const found = sh.getRange("A:A").createTextFinder(user.email).matchEntireCell(true).findNext();
-  const row = found ? found.getRow() : sh.getLastRow() + 1;
-  const firstSeen = found ? sh.getRange(row, 11).getValue() || now : now;
-  const list = (a) => a.map((n) => n + 1).join(", ");
-  // activity counts only go up, so restarting or clearing the browser can't hide them
-  const activity = s.activity.map((n, k) => Math.max(n, found ? Number(sh.getRange(row, ACTIVITY_COL + k).getValue()) || 0 : 0));
+  const firstSeen = found ? sh.getRange(row, COL.firstSeen).getValue() || now : now;
+  const finishedAt = (found && sh.getRange(row, COL.finishedAt).getValue()) || (s.finished ? now : "");
+  // activity counts only go up, so clearing the browser can't hide them
+  const activity = s.activity.map((n, k) => Math.max(n, found ? Number(sh.getRange(row, COL.activity + k).getValue()) || 0 : 0));
+  const answers = {};
+  Object.keys(s.answers).forEach((n) => (answers[n] = { ok: s.answers[n].ok ? 1 : 0, g: s.answers[n].g }));
   sh.getRange(row, 1, 1, SCORES_HEADERS.length).setValues([[
-    text_(user.email, 200), text_(user.name, 200), s.score, s.outOf, s.solved.length, s.firstTry, s.shown.length, s.wrong,
-    s.at, s.finished ? "yes" : "no", firstSeen, now, list(s.solved), list(s.shown),
-  ].concat(activity)]);
+    text_(user.email, 200), text_(user.name, 200), s.score, s.max, s.right, s.wrong, s.hints.length, s.answered,
+    s.at, s.finished ? "yes" : "no", firstSeen, now, finishedAt,
+  ].concat(activity, [JSON.stringify({ a: answers, h: s.hints })])]);
+}
+
+// Students who have answered every slide, ranked by score; ties share a rank and are
+// listed by who finished first.
+function leaderboard_(sh, email) {
+  const rows = sh.getDataRange().getValues().slice(1);
+  const domains = SETTINGS.LEADERBOARD_DOMAINS.map((d) => String(d).toLowerCase());
+  const eligible = (e) => domains.indexOf(String(e).toLowerCase().split("@")[1]) >= 0;
+  const done = rows.filter((r) => r[9] === "yes" && eligible(r[0]))
+    .map((r) => ({ email: String(r[0]).toLowerCase(), name: String(r[1] || r[0]).replace(/^'/, "").split(/[\s@]/)[0], score: Number(r[2]) || 0, at: new Date(r[12] || r[11]).getTime() || 0 }))
+    .sort((a, b) => b.score - a.score || a.at - b.at);
+  let rank = 0;
+  done.forEach((r, k) => { r.rank = k > 0 && r.score === done[k - 1].score ? done[k - 1].rank : k + 1; if (r.email === email) rank = r.rank; });
+  const average = done.length ? Math.round(done.reduce((t, r) => t + r.score, 0) / done.length) : 0;
+  return {
+    rank: rank || null, of: done.length, average: average,
+    note: eligible(email) ? "" : "Only student accounts are ranked.",
+    top: done.slice(0, SETTINGS.LEADERBOARD_TOP).map((r) => ({ rank: r.rank, name: r.name, score: r.score, you: r.email === email })),
+  };
 }
 
 function writeAttempts_(user, events) {
@@ -146,7 +193,7 @@ function writeAttempts_(user, events) {
     text_(user.email, 200),
     (parseInt(ev.slide, 10) || 0) + 1,
     text_(ev.op, 60),
-    ["solved", "wrong", "shown"].concat(ACTIVITY_KINDS).indexOf(ev.kind) >= 0 ? ev.kind : "other",
+    ["right", "wrong", "hint"].concat(ACTIVITY_KINDS).indexOf(ev.kind) >= 0 ? ev.kind : "other",
     text_(ev.answer, 300),
     text_(ev.id, 40),
   ]);

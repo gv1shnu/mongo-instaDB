@@ -1,11 +1,14 @@
-// Slide-deck player: slide 0 is the intro, slides 1..N are the story steps,
-// slide N+1 is the finale. The phone beside the slide always shows the story.
+// Slide-deck exam: slide 0 is the intro, slides 1..N are the story steps,
+// slide N+1 is the results. The phone beside the slide always shows the story.
+// Exam rules: one submitted answer per slide, a hint halves that slide's points,
+// and solutions only appear once every slide is answered.
 (function () {
   const E = window.InstaEngine, STORY = window.STORY, SEED = window.SEED;
   // Score tracking is optional: a stand-in that does nothing keeps the deck working without score.js
   const Score = window.Score || { enabled: false, mustSignIn: () => false, init() {}, event() {}, sync() {}, renderButtons() {}, signOut() {} };
   const { assemble, canonical, stepNow, chipsFor } = window;
   const steps = STORY.steps, N = steps.length, LAST = N + 1;
+  const POINTS = 10, HINT_COST = 5, MAX = POINTS * N;
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const blanksOf = (st) => st.code.filter((p) => typeof p !== "string");
@@ -15,6 +18,7 @@
     write: ["✍️", "write the query"], pick: ["🧩", "pick the operator"], choice: ["☑️", "choose the query"],
     bug: ["🐞", "fix the bug"], predict: ["🔮", "predict"],
   };
+  const KIND = { write: "Code writing", pick: "Fill in the blanks", choice: "Multiple choice", bug: "Multiple choice", predict: "Multiple choice" };
 
   // database state before each step, following the canonical story
   const states = [SEED];
@@ -24,25 +28,45 @@
   });
   const runAt = (code, i) => E.run(code, states[i], { now: stepNow(steps[i]) });
 
-  // Progress lives in the browser, one copy per signed-in student (shared lab computers),
-  // plus one for whoever hasn't signed in.
-  const BASE_KEY = "instadb-deck-v1";
+  // ---------- progress ----------
+  // Lives in the browser, one copy per signed-in student (shared lab computers), plus one
+  // for whoever hasn't signed in. answers[i] = { ok, given, sel } once slide i is submitted.
+  const BASE_KEY = "instadb-exam-v1";
   let key = BASE_KEY;
-  const fresh = () => ({ at: 0, solved: [], tried: [], revealed: [], firstTry: [], wrong: {}, activity: { tabs: 0, away: 0 } });
+  const fresh = () => ({ at: 0, answers: {}, hints: [], activity: { tabs: 0, away: 0 } });
   function load(k) {
     try {
       const saved = JSON.parse(localStorage.getItem(k));
-      if (saved && Number.isInteger(saved.at) && Array.isArray(saved.solved)) return Object.assign(fresh(), saved);
+      if (saved && Number.isInteger(saved.at) && saved.answers) return Object.assign(fresh(), saved);
     } catch (e) {}
     return fresh();
   }
   let progress = load(key);
   const save = () => { try { localStorage.setItem(key, JSON.stringify(progress)); } catch (e) {} };
-  const mark = (list, i) => { if (!progress[list].includes(i)) progress[list].push(i); };
-  const isSolved = (i) => progress.solved.includes(i);
-  // score: slides solved without "Show answer"
-  const scoreOf = (p) => p.solved.filter((i) => !p.revealed.includes(i)).length;
-  const snapshot = () => ({ slides: N, at: progress.at, solved: progress.solved, firstTry: progress.firstTry, revealed: progress.revealed, wrong: progress.wrong, activity: progress.activity });
+  const answer = (i) => progress.answers[i];
+  const answeredCount = () => Object.keys(progress.answers).length;
+  const finished = () => answeredCount() === N;
+  const hinted = (i) => progress.hints.includes(i);
+  const pointsFor = (i) => { const a = answer(i); return a && a.ok ? (hinted(i) ? POINTS - HINT_COST : POINTS) : 0; };
+  const total = () => steps.reduce((s, st, i) => s + pointsFor(i), 0);
+  const firstOpen = () => { for (let i = 0; i < N; i++) if (!answer(i)) return i; return N; };
+  const snapshot = () => ({
+    slides: N, at: progress.at, hints: progress.hints, activity: progress.activity, board: finished(),
+    answers: Object.fromEntries(Object.entries(progress.answers).map(([i, a]) => [i, { ok: a.ok, given: a.given }])),
+  });
+  // the score sheet keeps each student's first answer per slide; adopt it, so clearing the
+  // browser or switching devices can't undo an answer
+  let board = null;
+  function fromServer(data) {
+    let changed = false;
+    Object.entries(data.answers || {}).forEach(([i, a]) => {
+      const mine = progress.answers[i];
+      if (!mine || mine.ok !== a.ok || mine.given !== a.given) { progress.answers[i] = { ok: !!a.ok, given: String(a.given || ""), sel: mine && mine.given === a.given ? mine.sel : null }; changed = true; }
+    });
+    (data.hints || []).forEach((i) => { if (!hinted(i)) { progress.hints.push(i); changed = true; } });
+    if (data.board) { board = data.board; if (progress.at > N) changed = true; }
+    if (changed) { save(); ui = {}; render(); }
+  }
 
   function switchOwner(u) {
     const nextKey = u ? BASE_KEY + ":" + u.email : BASE_KEY;
@@ -57,25 +81,29 @@
       key = nextKey;
       progress = u ? load(key) : fresh();
     }
+    board = null;
+    progress.at = Math.min(progress.at, reach());
     setHash(progress.at);
     ui = {};
     render();
   }
 
-  // per-slide state that isn't saved: picks for blanks, the active blank
+  // per-slide state that isn't saved: the current selection before Submit
   let ui = {};
 
   // ---------- navigation ----------
   const slideFromHash = () => { const n = parseInt(location.hash.replace(/^#\/?/, ""), 10); return Number.isInteger(n) ? n : null; };
   const setHash = (n) => history.replaceState(null, "", location.pathname + location.search + "#" + n);
   const gated = () => Score.mustSignIn();
+  // the furthest slide a student can open: the first unanswered one, or the results
+  const reach = () => (finished() ? LAST : firstOpen() + 1);
   const canGoNext = () => {
     const s = progress.at;
     if (s > N || gated()) return false;
-    return s === 0 || isSolved(s - 1) || progress.tried.includes(s - 1);
+    return s === 0 || !!answer(s - 1);
   };
   function go(slide) {
-    slide = Math.max(0, Math.min(LAST, slide));
+    slide = Math.max(0, Math.min(LAST, reach(), slide));
     progress.at = slide; save();
     if (slideFromHash() !== slide) setHash(slide);
     ui = {};
@@ -92,12 +120,13 @@
     const s = progress.at;
     if (s === 0) renderIntro();
     else if (gated()) renderGate();
-    else if (s > N) renderFinale();
+    else if (s > N) renderResults();
     else renderStep(s - 1);
     renderNav();
     renderProgress();
     renderData();
     renderAccount();
+    $("restart").hidden = Score.enabled; // an exam can't be restarted once answers are in
     Score.renderButtons();
   }
 
@@ -105,17 +134,17 @@
     const s = progress.at;
     $("prev").disabled = s === 0;
     $("next").disabled = s > N || !canGoNext();
-    $("next").textContent = s === 0 ? "Start →" : s === N ? "Finish →" : "Next →";
-    $("next").classList.toggle("ready", s > 0 && s <= N && isSolved(s - 1));
+    $("next").textContent = s === 0 ? "Start →" : s === N ? "See results →" : "Next →";
+    $("next").classList.toggle("ready", s > 0 && s <= N && !!answer(s - 1));
     $("nav-note").textContent = gated() ? "Sign in with your university Google account to start."
-      : s > 0 && s <= N && !canGoNext() ? "Answer this slide to unlock Next. A wrong try counts." : "";
-    $("counter").textContent = s === 0 ? "Intro" : s > N ? "The end" : `Slide ${s} of ${N}`;
+      : s > 0 && s <= N && !canGoNext() ? "Submit an answer to unlock Next." : "";
+    $("counter").textContent = s === 0 ? "Intro" : s > N ? "Results" : `Slide ${s} of ${N}`;
   }
   function renderProgress() {
-    const s = progress.at;
-    $("bar-fill").style.width = (progress.solved.length / N) * 100 + "%";
-    $("progress-label").textContent = s === 0 ? `${progress.solved.length} of ${N} solved · score ${scoreOf(progress)}`
-      : s > N ? "Day complete" : `Slide ${s} of ${N} · ${chapterOf(steps[s - 1]).title.split(":")[0]}`;
+    const s = progress.at, n = answeredCount();
+    $("bar-fill").style.width = (n / N) * 100 + "%";
+    $("progress-label").textContent = s === 0 ? `${n} of ${N} answered` + (finished() ? ` · ${total()} / ${MAX}` : "")
+      : s > N ? (finished() ? `Score ${total()} / ${MAX}` : `${n} of ${N} answered`) : `Slide ${s} of ${N} · ${chapterOf(steps[s - 1]).title.split(":")[0]}`;
   }
   function renderData() {
     const st = states[Math.min(Math.max(progress.at - 1, 0), N)];
@@ -133,12 +162,20 @@
     table("posts-table", "posts", st.posts);
   }
 
+  const rulesHTML = () => `<div class="rules"><b>How it's marked</b>
+    <ul>
+      <li><b>One try per slide.</b> Pick or type your answer, then press <b>Submit</b>. It locks after that.</li>
+      <li><b>${POINTS} points</b> for each right answer, <b>${POINTS - HINT_COST}</b> if you used the hint, <b>0</b> if it's wrong. ${N} slides, ${MAX} points.</li>
+      <li><b>Solutions come at the end.</b> You'll see every answer, why it's right, and where you stand on the class leaderboard once all ${N} slides are answered.</li>
+    </ul></div>`;
+
   function renderIntro() {
     const counts = {};
     steps.forEach((st) => (counts[st.mode] = (counts[st.mode] || 0) + 1));
-    $("slide").innerHTML = `<div class="eyebrow">MongoDB practice · Lectures 2 and 3</div>
+    $("slide").innerHTML = `<div class="eyebrow">MongoDB exam · Lectures 2 and 3</div>
       <h2 class="slide-title">${esc(STORY.title)}</h2>
       <p class="lead">${STORY.intro}</p>
+      ${rulesHTML()}
       <div class="kinds">${Object.keys(MODES).filter((m) => counts[m]).map((m) => `<span class="tag mode-${m}">${MODES[m][0]} ${MODES[m][1]} · ${counts[m]}</span>`).join("")}</div>
       <ol class="agenda">${STORY.chapters.map((c) => {
         const nums = steps.map((s, k) => (s.chapter === c.id ? k + 1 : 0)).filter(Boolean);
@@ -146,18 +183,16 @@
         const range = nums.length > 1 ? `slides ${nums[0]}–${nums[nums.length - 1]}` : `slide ${nums[0]}`;
         return `<li><span class="ag-time">${esc(time)}</span><span class="ag-what">${esc(what)}</span><span class="ag-range">${range}</span></li>`;
       }).join("")}</ol>
-      ${signInPanel()}
-`;
+      ${signInPanel()}`;
     resetTerminal();
     phone({ idle: true, before: SEED, spec: { time: "6:59" } });
   }
 
-  // ---------- sign-in and score ----------
-  const scoreLine = () => `Your score: <b>${scoreOf(progress)} / ${N}</b> (slides solved without "Show answer"), ${progress.firstTry.length} of them on the first try.`;
+  // ---------- sign-in ----------
   function signInPanel() {
     if (!Score.enabled) return "";
     const u = Score.user;
-    if (u) return `<div class="signin-panel ok"><b>Signed in as ${esc(u.email)}.</b> Your score is saved to the class sheet after every answer.
+    if (u) return `<div class="signin-panel ok"><b>Signed in as ${esc(u.email)}.</b> Your answers are saved to the class sheet as you go.
       <span class="muted small">Switching tabs or windows is recorded with your score.</span>
       <span class="muted" id="signin-detail">${esc(Score.detail)}</span></div>`;
     return `<div class="signin-panel"><b>Sign in with your university Google account</b> (${Score.domains.map((d) => `<code>@${esc(d)}</code>`).join(" or ")}) so your score is recorded.
@@ -181,16 +216,16 @@
     const needsButton = !u || st === "expired" || st === "wrong-domain";
     const shape = (u ? u.email : "-") + "|" + needsButton;
     const labels = { loading: "Loading sign-in…", unavailable: "Score not recorded", signin: "Not signed in", "wrong-domain": "Use your university account",
-      saving: "Saving…", saved: "Score saved ✓", offline: "Offline: will retry", expired: "Sign in again to save" };
+      saving: "Saving…", saved: "Saved ✓", offline: "Offline: will retry", expired: "Sign in again to save" };
     if (shape !== accountShape) {
       accountShape = shape;
       el.innerHTML = `${u ? `<span class="acct-name" title="${esc(u.email)}">${esc(u.email)}</span>` : ""}
         <span class="acct-status" id="acct-status"></span>
         ${needsButton ? '<span class="g-signin" data-size="small"></span>' : ""}
         ${u ? '<button class="acct-out" id="acct-out" type="button">Sign out</button>' : ""}`;
-      if (u) $("acct-out").onclick = () => { if (confirm("Sign out? Your saved score stays in the class sheet.")) Score.signOut(); };
+      if (u) $("acct-out").onclick = () => { if (confirm("Sign out? Your saved answers stay in the class sheet.")) Score.signOut(); };
     }
-    $("acct-status").textContent = `${labels[st] || ""}${u ? ` · ${scoreOf(progress)}/${N}` : ""}`;
+    $("acct-status").textContent = `${labels[st] || ""}${u ? ` · ${answeredCount()}/${N} answered` : ""}`;
     $("acct-status").className = "acct-status " + st;
     el.title = Score.detail || "";
     const d = document.getElementById("signin-detail");
@@ -198,38 +233,167 @@
     Score.renderButtons();
   }
 
-  function renderFinale() {
-    const end = states[N];
-    const rev = progress.revealed.length;
-    $("slide").innerHTML = `<div class="eyebrow">Midnight</div>
-      <h2 class="slide-title">That's the day on instaDB 🌙</h2>
-      <p class="lead">You created a user and her posts, read profiles, filtered with comparison, logical, regex and array operators, paged through a sorted feed, changed fields and arrays with update operators, replaced a whole document and cleaned up. instaDB ends the day with <b>${end.users.length} users</b> and <b>${end.posts.length} posts</b>.</p>
-      <p class="score-line">${scoreLine()}${Score.user ? ` Saved to the class sheet as ${esc(Score.user.email)}.` : ""}</p>
-      <p class="muted">${progress.solved.length} of ${N} slides solved. ${rev ? `You used "Show answer" on ${rev} slide${rev > 1 ? "s" : ""}: ${progress.revealed.slice().sort((a, b) => a - b).map((i) => `<a href="#${i + 1}">${i + 1}</a>`).join(", ")}. Try those again without it.` : "You didn't reveal a single answer."}</p>
-      <div class="actions"><button class="btn primary" id="again">Restart the day</button></div>`;
-    $("again").onclick = restart;
-    resetTerminal();
-    phone({ finale: true, before: end, spec: { time: "0:05" } });
-  }
-
+  // ---------- a question slide ----------
   function renderStep(i) {
-    const st = steps[i], [icon, label] = MODES[st.mode];
+    const st = steps[i], [icon, label] = MODES[st.mode], a = answer(i);
+    const pts = a ? `<span class="tag ${a.ok ? "pts-ok" : "pts-bad"}">${a.ok ? `+${pointsFor(i)}` : "0"} points</span>` : "";
     $("slide").innerHTML = `<div class="eyebrow">${esc(chapterOf(st).title)}</div>
-      <div class="step-meta"><span class="num">${i + 1}</span><span class="tag mode-${st.mode}">${icon} ${label}</span><span class="tag">${esc(st.op)}</span>${st.trap ? '<span class="tag warn">⚠️ predict first</span>' : ""}${progress.revealed.includes(i) ? '<span class="rev">answer shown</span>' : ""}</div>
+      <div class="step-meta"><span class="num">${i + 1}</span><span class="tag mode-${st.mode}">${icon} ${label}</span><span class="tag">${esc(st.op)}</span>${st.trap ? '<span class="tag warn">⚠️ predict first</span>' : ""}${hinted(i) ? '<span class="tag hint-used">hint used</span>' : ""}${pts}</div>
       <div class="before big">${st.before}</div>
       <div id="widget"></div>
-      <div class="actions" id="actions">
-        ${st.mode === "write" ? '<button class="btn primary" id="run">Run ▶</button>' : ""}
-        <button class="btn" id="hint">Hint</button>
-        <button class="btn" id="reveal">Show answer</button>
+      <div class="hint-box" id="hint-box" ${hinted(i) ? "" : "hidden"}><b>Hint:</b> ${esc(st.hint)}</div>
+      <div class="actions" id="actions" ${a ? "hidden" : ""}>
+        <button class="btn primary" id="submit" disabled>Submit answer</button>
+        ${hinted(i) ? "" : `<button class="btn" id="hint">Hint (−${HINT_COST} points)</button>`}
       </div>
-      <div class="feedback" id="feedback" hidden></div>`;
-    if (st.mode === "write") document.querySelectorAll("#slide .given").forEach(addCopy);
-    $("hint").onclick = () => feedback("info", "Hint", esc(st.hint));
-    $("reveal").onclick = () => reveal(i);
-    WIDGETS[st.mode].draw(i);
-    if (isSolved(i)) showSolved(i);
-    else { resetTerminal(); phone({ idle: true, before: states[i], spec: st.screen }); }
+      <div class="feedback" id="feedback" hidden></div>
+      <div id="solution"></div>`;
+    if (st.mode === "write" && !a) document.querySelectorAll("#slide .given").forEach(addCopy);
+    const w = WIDGETS[st.mode];
+    w.draw(i);
+    if (a) {
+      showAnswered(i);
+    } else {
+      $("submit").onclick = () => submit(i);
+      if ($("hint")) $("hint").onclick = () => useHint(i);
+      resetTerminal();
+      phone({ idle: true, before: states[i], spec: st.screen });
+    }
+  }
+  // the widget calls this whenever the selection changes
+  const selectionChanged = (i) => { if ($("submit")) $("submit").disabled = WIDGETS[steps[i].mode].value(i) == null; };
+
+  function useHint(i) {
+    if (hinted(i) || answer(i)) return;
+    if (!confirm(`Use the hint? A right answer on this slide will then be worth ${POINTS - HINT_COST} points instead of ${POINTS}.`)) return;
+    progress.hints.push(i); save();
+    record(i, "hint", "");
+    $("hint-box").hidden = false;
+    $("hint").remove();
+    const meta = document.querySelector("#slide .step-meta");
+    meta.insertAdjacentHTML("beforeend", '<span class="tag hint-used">hint used</span>');
+  }
+
+  function submit(i) {
+    const st = steps[i], w = WIDGETS[st.mode], sel = w.value(i);
+    if (sel == null || answer(i)) return;
+    const code = w.codeFor(i, sel), res = runAt(code, i);
+    const ok = w.correct(i, sel, res);
+    progress.answers[i] = { ok, given: w.label(i, sel), sel };
+    save();
+    record(i, ok ? "right" : "wrong", progress.answers[i].given + (hinted(i) ? " (after hint)" : ""));
+    ui = {};
+    renderStep(i);
+    renderNav(); renderProgress(); renderAccount();
+  }
+
+  // a submitted slide: the student's own answer, locked, and what it did on the phone
+  function showAnswered(i) {
+    const st = steps[i], w = WIDGETS[st.mode], a = answer(i);
+    w.lock(i, a);
+    if (a.sel != null) {
+      const code = w.codeFor(i, a.sel);
+      showRun(i, code, runAt(code, i));
+      $("phone-col").classList.remove("open");
+    } else {
+      resetTerminal();
+      phone({ idle: true, before: states[i], spec: st.screen });
+    }
+    const last = i + 1 === N;
+    const nextBtn = `<div class="actions"><button class="btn primary" id="continue">${last ? "See results →" : "Next slide →"}</button></div>`;
+    if (a.ok) feedback("ok", `Correct ✓ · +${pointsFor(i)} points${hinted(i) ? " (hint used)" : ""}`, st.after, nextBtn);
+    else feedback("bad", "Not right · 0 points", finished()
+      ? "The solution is below."
+      : `You'll see the right answer and why once you've answered all ${N} slides.`, nextBtn);
+    $("continue").onclick = next;
+    if (finished()) $("solution").innerHTML = solutionHTML(i, true);
+  }
+
+  // ---------- solutions (only once every slide is answered) ----------
+  function rightAnswerHTML(i) {
+    const st = steps[i];
+    if (st.mode === "write") return `<code class="sol-code">${esc(st.answer)}</code>`;
+    if (st.mode === "pick") return `<code class="sol-code">${st.code.map((p) => (typeof p === "string" ? esc(p) : `<mark>${esc(p.b)}</mark>`)).join("")}</code>`;
+    const k = st.options.findIndex((o) => o.ok), o = st.options[k];
+    return `<b>${LETTERS[k]}.</b> ${st.mode === "predict" ? esc(o.text) : `<code class="sol-code">${esc(o.code)}</code>`}`;
+  }
+  function whyWrong(i) {
+    const st = steps[i], a = answer(i);
+    if (!a || a.ok || a.sel == null) return "";
+    if (st.mode === "pick") return blanksOf(st).map((b, k) => b.why[a.sel[k]]).filter(Boolean).join(" ");
+    if (st.mode === "write") {
+      const res = runAt(a.sel, i);
+      return res.ok ? explainDiff(st, res, runAt(canonical(st), i)) : `MongoDB rejected it: ${esc(res.error)}`;
+    }
+    return esc((st.options[a.sel] || {}).why || "");
+  }
+  function solutionHTML(i, open) {
+    const st = steps[i], a = answer(i) || { ok: false, given: "" };
+    const why = whyWrong(i);
+    return `<details class="sol ${a.ok ? "ok" : "bad"}" ${open ? "open" : ""}>
+      <summary><span class="sol-num">${i + 1}</span><span class="sol-op">${esc(st.op)}</span><span class="sol-kind">${MODES[st.mode][0]}</span>
+        <span class="sol-pts">${a.ok ? "✓" : "✗"} ${pointsFor(i)}/${POINTS}${hinted(i) ? " · hint" : ""}</span></summary>
+      <div class="sol-body">
+        <p><span class="sol-label">Your answer</span>${a.given ? `<code class="sol-code">${esc(a.given)}</code>` : "<i>none</i>"}</p>
+        ${a.ok ? "" : `<p><span class="sol-label">Right answer</span>${rightAnswerHTML(i)}</p>`}
+        ${why ? `<p><span class="sol-label">Why yours isn't right</span>${why}</p>` : ""}
+        <p><span class="sol-label">What happens</span>${st.after}</p>
+        ${st.trapNote ? `<p class="trap">${st.trapNote}</p>` : ""}
+      </div></details>`;
+  }
+
+  // ---------- results ----------
+  function breakdownHTML() {
+    const rows = (groups) => groups.map(([name, idx]) => {
+      const got = idx.reduce((s, i) => s + pointsFor(i), 0), max = idx.length * POINTS;
+      const right = idx.filter((i) => answer(i) && answer(i).ok).length;
+      return `<tr><td>${esc(name)}</td><td>${right} / ${idx.length}</td><td class="bd-bar"><span style="width:${(got / max) * 100}%"></span></td><td><b>${got}</b> / ${max}</td></tr>`;
+    }).join("");
+    const byChapter = STORY.chapters.map((c) => [c.title, steps.map((s, i) => (s.chapter === c.id ? i : -1)).filter((i) => i >= 0)]);
+    const kinds = [...new Set(steps.map((s) => KIND[s.mode]))];
+    const byKind = kinds.map((k) => [k, steps.map((s, i) => (KIND[s.mode] === k ? i : -1)).filter((i) => i >= 0)]);
+    const head = "<thead><tr><th></th><th>Right</th><th></th><th>Points</th></tr></thead>";
+    return `<h3 class="res-h">Breakdown</h3>
+      <table class="breakdown">${head}<tbody>${rows(byKind)}</tbody></table>
+      <table class="breakdown">${head}<tbody>${rows(byChapter)}</tbody></table>`;
+  }
+  function leaderboardHTML() {
+    if (!Score.enabled) return "";
+    if (!Score.user) return `<h3 class="res-h">Leaderboard</h3><p class="muted">Sign in with your university account to appear on the class leaderboard.</p>`;
+    if (!board) return `<h3 class="res-h">Leaderboard</h3><p class="muted">${Score.status === "offline" || Score.status === "expired" ? esc(Score.detail) : "Loading the class leaderboard…"}</p>`;
+    const ord = (n) => n + (["th", "st", "nd", "rd"][(n % 100 - 20) % 10] || ["th", "st", "nd", "rd"][n % 100] || "th");
+    const you = board.rank ? `You are <b>${ord(board.rank)}</b> of ${board.of} student${board.of === 1 ? "" : "s"} who have finished.` : esc(board.note || "You'll be ranked once your score is saved.");
+    return `<h3 class="res-h">Leaderboard</h3>
+      <p>${you} Class average: <b>${board.average}</b> / ${MAX}.</p>
+      <table class="board"><thead><tr><th>#</th><th>Student</th><th>Score</th></tr></thead><tbody>
+        ${(board.top || []).map((r) => `<tr class="${r.you ? "you" : ""}"><td>${r.rank}</td><td>${esc(r.name)}${r.you ? " (you)" : ""}</td><td>${r.score}</td></tr>`).join("")}
+      </tbody></table>
+      <p class="muted small">Top 10 by first name. Ties share a rank.</p>`;
+  }
+  function renderResults() {
+    const end = states[N];
+    resetTerminal();
+    phone({ finale: true, before: end, spec: { time: "0:05" } });
+    if (!finished()) {
+      const open = steps.map((s, i) => (answer(i) ? -1 : i + 1)).filter((n) => n > 0);
+      $("slide").innerHTML = `<div class="eyebrow">Almost there</div>
+        <h2 class="slide-title">${open.length} slide${open.length > 1 ? "s" : ""} left</h2>
+        <p class="lead">Answer every slide to see your score, the solutions and the leaderboard. Still open: ${open.join(", ")}.</p>
+        <div class="actions"><button class="btn primary" id="goto">Go to slide ${open[0]} →</button></div>`;
+      $("goto").onclick = () => go(open[0]);
+      return;
+    }
+    const right = steps.filter((s, i) => answer(i).ok).length, hints = progress.hints.length;
+    $("slide").innerHTML = `<div class="eyebrow">Midnight · results</div>
+      <h2 class="slide-title">That's the day on instaDB 🌙</h2>
+      <div class="score-big"><b>${total()}</b><span>/ ${MAX}</span></div>
+      <p class="score-sub">${right} of ${N} right · ${N - right} wrong · ${hints} hint${hints === 1 ? "" : "s"} used${Score.user ? ` · saved as ${esc(Score.user.email)}` : ""}</p>
+      ${leaderboardHTML()}
+      ${breakdownHTML()}
+      <h3 class="res-h">Solutions</h3>
+      <label class="only-wrong"><input type="checkbox" id="only-wrong"> Show only the ones I got wrong</label>
+      <div class="sols" id="sols">${steps.map((s, i) => solutionHTML(i, false)).join("")}</div>`;
+    $("only-wrong").onchange = (e) => $("sols").classList.toggle("only-wrong", e.target.checked);
   }
 
   // A Copy button on a given document, so write slides test the query, not retyping the fields.
@@ -277,7 +441,7 @@
     try { window.Phone.render($("phone"), ctx); }
     catch (e) { $("phone").innerHTML = '<div class="ph-frame"><div class="ph-screen"><div class="ph-emptystate"><div class="ph-empty-icon">📵</div><b>Preview unavailable</b><small>The terminal below still shows the result.</small></div></div></div>'; }
   };
-  const resetTerminal = () => { $("output").innerHTML = 'instaDB&gt; <span class="muted">// every query you run or pick shows its result here</span>'; };
+  const resetTerminal = () => { $("output").innerHTML = 'instaDB&gt; <span class="muted">// your submitted query and its result show here</span>'; };
   function showRun(i, code, res) {
     terminal(code.trim(), res, states[i]);
     phone({ res, before: states[i], after: res.ok ? res.state : null, spec: steps[i].screen });
@@ -300,45 +464,7 @@
     $("output").innerHTML = `instaDB&gt; ${esc(code)}\n${body}`;
   }
   const short = (res) => (res.ok ? E.show(res.value).replace(/\s*\n\s*/g, " ") : res.error);
-
-  // ---------- solving ----------
-  const record = (i, kind, answer) => Score.event({ slide: i, op: steps[i].op, kind, answer: String(answer == null ? "" : answer).slice(0, 300) });
-  function solve(i, answer, replay) {
-    const st = steps[i];
-    if (!replay && !isSolved(i)) {
-      if (!progress.tried.includes(i)) mark("firstTry", i);
-      record(i, "solved", answer);
-    }
-    mark("solved", i); mark("tried", i); save();
-    feedback("ok", "Correct ✓", st.after, (st.trapNote ? `<p class="trap">${st.trapNote}</p>` : "") +
-      `<div class="actions"><button class="btn primary" id="continue">${i + 1 < N ? "Next slide →" : "Finish the day →"}</button></div>`);
-    $("continue").onclick = next;
-    WIDGETS[st.mode].lock(i);
-    $("reveal").disabled = true;
-    renderNav(); renderProgress(); renderAccount();
-  }
-  function wrong(i, head, body, answer) {
-    mark("tried", i);
-    progress.wrong[i] = (progress.wrong[i] || 0) + 1;
-    save();
-    record(i, "wrong", answer);
-    feedback("bad", head, body);
-    renderNav();
-  }
-  function showSolved(i) {
-    const st = steps[i];
-    WIDGETS[st.mode].fill(i);
-    const code = canonical(st);
-    const res = runAt(code, i);
-    showRun(i, code, res);
-    $("phone-col").classList.remove("open");
-    solve(i, null, true);
-  }
-  function reveal(i) {
-    if (!progress.revealed.includes(i) && !isSolved(i)) record(i, "shown", "");
-    mark("revealed", i); mark("tried", i); save();
-    WIDGETS[steps[i].mode].reveal(i);
-  }
+  const record = (i, kind, detail) => Score.event({ slide: i, op: steps[i].op, kind, answer: String(detail == null ? "" : detail).slice(0, 300) });
 
   // Explain how a write-step answer differs from the expected one.
   function explainDiff(st, got, want) {
@@ -355,7 +481,7 @@
     if (gk === "insertOne" || gk === "insertMany") return "The inserted document doesn't match the form. Check every field name, spelling, and value type: numbers without quotes, true/false without quotes, text in quotes.";
     if (gk === "update") {
       if (g.matchedCount !== w.matchedCount) return `Your update matched ${g.matchedCount} document${g.matchedCount === 1 ? "" : "s"}; this step should match ${w.matchedCount}. Check the method (updateOne vs updateMany) and the filter.`;
-      return "Right documents, but they changed differently from what the story asks. Check each operator and its value. The phone and the terminal show what your query did.";
+      return "Right documents, but they changed differently from what the story asks. Check each operator and its value.";
     }
     if (gk === "delete") {
       if (g.deletedCount !== w.deletedCount) return `You deleted ${g.deletedCount} post${g.deletedCount === 1 ? "" : "s"}; this step should delete ${w.deletedCount}. Check the method (deleteOne vs deleteMany) and the filter.`;
@@ -365,147 +491,125 @@
   }
 
   // ---------- question widgets ----------
-  const optionButtons = (st, render) => `<div class="opts" role="list">${st.options.map((o, k) =>
-    `<button class="opt" data-k="${k}" role="listitem"><span class="opt-key">${LETTERS[k]}</span>${render(o)}</button>`).join("")}</div>`;
-  const lockOptions = (i) => {
-    const okK = steps[i].options.findIndex((o) => o.ok);
-    document.querySelectorAll("#widget .opt").forEach((b) => { b.disabled = true; if (+b.dataset.k === okK) b.classList.add("ok"); });
+  // Each widget draws the question, reports the current selection (value), turns a
+  // selection into a query (codeFor), marks it (correct), labels it for the sheet,
+  // and redraws itself locked on the submitted answer (lock).
+  const optionButtons = (st, render) => `<div class="opts" role="radiogroup">${st.options.map((o, k) =>
+    `<button class="opt" data-k="${k}" role="radio" aria-checked="false"><span class="opt-key">${LETTERS[k]}</span>${render(o)}</button>`).join("")}</div>`;
+  const choiceBase = {
+    bind(i) {
+      document.querySelectorAll("#widget .opt").forEach((b) => (b.onclick = () => {
+        if (answer(i)) return;
+        ui.k = +b.dataset.k;
+        document.querySelectorAll("#widget .opt").forEach((x) => { const on = +x.dataset.k === ui.k; x.classList.toggle("sel", on); x.setAttribute("aria-checked", on); });
+        selectionChanged(i);
+      }));
+    },
+    value: () => (Number.isInteger(ui.k) ? ui.k : null),
+    codeFor: (i, k) => steps[i].options[k].code,
+    correct: (i, k, res) => !!steps[i].options[k].ok,
+    label: (i, k) => `${LETTERS[k]}: ${steps[i].options[k].code || steps[i].options[k].text}`,
+    lock(i, a) {
+      document.querySelectorAll("#widget .opt").forEach((b) => {
+        b.disabled = true;
+        const k = +b.dataset.k, mine = a.sel === k, right = !!steps[i].options[k].ok;
+        if (mine) b.classList.add(a.ok ? "ok" : "bad");
+        if (right && finished() && !a.ok) b.classList.add("ok");
+      });
+    },
   };
 
   const WIDGETS = {
     write: {
       draw(i) {
         $("widget").innerHTML = `<textarea class="editor" id="editor" rows="3" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Your query" placeholder="Type the whole query, e.g. db.collection.method( ... )"></textarea>
-          <p class="kbd-tip">Press <b>Run ▶</b> and watch the phone.</p>`;
+          <p class="kbd-tip">Check your query carefully: <b>Submit</b> runs it once and locks it.</p>`;
         const ed = $("editor");
         const grow = () => { ed.style.height = "auto"; ed.style.height = ed.scrollHeight + 2 + "px"; };
-        ed.addEventListener("input", () => { grow(); ed.classList.remove("bad", "ok"); });
-        $("run").onclick = () => this.check(i);
+        ed.addEventListener("input", () => { grow(); selectionChanged(i); });
       },
-      check(i) {
-        const st = steps[i], code = $("editor").value;
-        if (!code.trim()) { feedback("info", "Type your query first", "Write the whole command, starting with <code>db.</code>"); return; }
-        const res = runAt(code, i), want = runAt(canonical(st), i);
-        showRun(i, code, res);
-        const ok = res.ok && E.fingerprint(res, ordered(st)) === E.fingerprint(want, ordered(st));
-        $("editor").classList.toggle("ok", ok); $("editor").classList.toggle("bad", !ok);
-        if (ok) return solve(i, code);
-        if (!res.ok) return wrong(i, "MongoDB rejected the query", esc(res.error) + "<br><span class='muted'>The error is also in the terminal below.</span>", code);
-        wrong(i, "It ran, but it's not what the story needs", explainDiff(st, res, want), code);
+      value: () => { const v = $("editor") && $("editor").value.trim(); return v ? v : null; },
+      codeFor: (i, code) => code,
+      correct(i, code, res) {
+        const st = steps[i], want = runAt(canonical(st), i);
+        return res.ok && E.fingerprint(res, ordered(st)) === E.fingerprint(want, ordered(st));
       },
-      fill(i) { const ed = $("editor"); ed.value = canonical(steps[i]); ed.dispatchEvent(new Event("input")); },
-      lock() { $("editor").disabled = true; $("editor").classList.add("ok"); $("run").disabled = true; },
-      reveal(i) {
-        const ed = $("editor"); ed.value = canonical(steps[i]); ed.classList.add("revealed"); ed.dispatchEvent(new Event("input"));
-        feedback("info", "Here's the answer", "Read it, then press <b>Run ▶</b> to see what it does.");
-        renderNav();
+      label: (i, code) => code,
+      lock(i, a) {
+        const ed = $("editor");
+        ed.value = a.sel != null ? a.sel : a.given;
+        ed.dispatchEvent(new Event("input"));
+        ed.disabled = true;
+        ed.classList.add(a.ok ? "ok" : "bad");
+        document.querySelector("#widget .kbd-tip").remove();
       },
     },
 
     pick: {
       draw(i) {
-        const st = steps[i], blanks = blanksOf(st);
-        if (!ui.picks) { ui.picks = blanks.map(() => null); ui.active = 0; }
+        const st = steps[i], blanks = blanksOf(st), a = answer(i);
+        if (!ui.picks) { ui.picks = a && Array.isArray(a.sel) ? a.sel.slice() : blanks.map(() => null); ui.active = 0; }
         let bi = 0;
         const code = st.code.map((p) => {
           if (typeof p === "string") return esc(p);
           const k = bi++, v = ui.picks[k];
-          const state = ui.marks ? (ui.marks[k] ? "ok" : "bad") : "";
-          return `<button class="slot ${v ? "filled" : ""} ${k === ui.active && !ui.locked ? "active" : ""} ${state}" data-k="${k}" aria-label="blank ${k + 1}">${v ? esc(v) : "&nbsp;?&nbsp;"}</button>`;
+          const state = a ? (a.ok ? "ok" : finished() ? (v === blanks[k].b ? "ok" : "bad") : "bad") : "";
+          return `<button class="slot ${v ? "filled" : ""} ${k === ui.active && !a ? "active" : ""} ${state}" data-k="${k}" aria-label="blank ${k + 1}" ${a ? "disabled" : ""}>${v ? esc(v) : "&nbsp;?&nbsp;"}</button>`;
         }).join("");
-        const chips = ui.locked ? "" : chipsFor(st, blanks[ui.active]).map((c) =>
+        const chips = a ? "" : chipsFor(st, blanks[ui.active]).map((c) =>
           `<button class="pick-chip ${ui.picks[ui.active] === c ? "on" : ""}" data-v="${esc(c)}">${esc(c)}</button>`).join("");
-        $("widget").innerHTML = `<div class="code pick-code">${code}</div>` +
-          (ui.locked ? "" : `<div class="bank"><span class="bank-label">${blanks.length > 1 ? `Blank ${ui.active + 1} of ${blanks.length}` : "Pick one"}</span>${chips}</div>`);
-        document.querySelectorAll("#widget .slot").forEach((b) => (b.onclick = () => { if (ui.locked) return; ui.active = +b.dataset.k; this.draw(i); }));
-        document.querySelectorAll("#widget .pick-chip").forEach((b) => (b.onclick = () => this.choose(i, b.dataset.v)));
+        $("widget").innerHTML = `<div class="code pick-code">${code}</div>` + (a && !Array.isArray(a.sel) ? `<p class="muted small">Your answer: <code>${esc(a.given)}</code></p>` : "") +
+          (a ? "" : `<div class="bank"><span class="bank-label">${blanks.length > 1 ? `Blank ${ui.active + 1} of ${blanks.length}` : "Pick one"}</span>${chips}</div>`);
+        document.querySelectorAll("#widget .slot").forEach((b) => (b.onclick = () => { ui.active = +b.dataset.k; this.draw(i); }));
+        document.querySelectorAll("#widget .pick-chip").forEach((b) => (b.onclick = () => {
+          ui.picks[ui.active] = b.dataset.v;
+          const empty = ui.picks.findIndex((p) => p === null);
+          if (empty >= 0) ui.active = empty;
+          this.draw(i);
+          selectionChanged(i);
+        }));
       },
-      choose(i, v) {
-        ui.picks[ui.active] = v; ui.marks = null;
-        const empty = ui.picks.findIndex((p) => p === null);
-        if (empty >= 0) { ui.active = empty; this.draw(i); return; }
-        this.draw(i);
-        this.check(i);
-      },
-      check(i) {
-        const st = steps[i], blanks = blanksOf(st), code = assemble(st.code, ui.picks);
-        const res = runAt(code, i);
-        showRun(i, code, res);
-        ui.marks = ui.picks.map((v, k) => v === blanks[k].b);
-        const bad = ui.marks.map((m, k) => (m ? -1 : k)).filter((k) => k >= 0);
-        if (!bad.length && res.ok) { this.draw(i); return solve(i, ui.picks.join(" · ")); }
-        ui.active = bad.length ? bad[0] : ui.active;
-        this.draw(i);
-        const why = bad.map((k) => blanks[k].why[ui.picks[k]]).filter(Boolean);
-        const which = blanks.length > 1 ? `Blank ${bad.map((k) => k + 1).join(" and ")} ${bad.length > 1 ? "aren't" : "isn't"} right. ` : "";
-        const body = why.length ? which + why.join(" ")
-          : !res.ok ? which + `MongoDB rejected it: <code>${esc(res.error)}</code>`
-          : which + "It ran, but it doesn't do what the task asks. Compare the phone with the task, then pick again.";
-        wrong(i, "Not quite", body, ui.picks.join(" · "));
-      },
-      fill(i) { ui.picks = blanksOf(steps[i]).map((b) => b.b); ui.marks = ui.picks.map(() => true); ui.locked = true; this.draw(i); },
-      lock(i) { ui.locked = true; ui.marks = ui.picks.map(() => true); this.draw(i); },
-      reveal(i) { ui.picks = blanksOf(steps[i]).map((b) => b.b); this.draw(i); this.check(i); },
+      value: () => (ui.picks && ui.picks.every((p) => p !== null) ? ui.picks.slice() : null),
+      codeFor: (i, picks) => assemble(steps[i].code, picks),
+      correct: (i, picks, res) => res.ok && picks.every((v, k) => v === blanksOf(steps[i])[k].b),
+      label: (i, picks) => picks.join(" · "),
+      lock(i) { ui.picks = null; this.draw(i); },
     },
 
-    choice: {
+    choice: Object.assign({}, choiceBase, {
       draw(i) {
-        const st = steps[i];
-        $("widget").innerHTML = optionButtons(st, (o) => `<code class="opt-code">${esc(o.code)}</code>`);
-        document.querySelectorAll("#widget .opt").forEach((b) => (b.onclick = () => this.choose(i, +b.dataset.k)));
+        $("widget").innerHTML = optionButtons(steps[i], (o) => `<code class="opt-code">${esc(o.code)}</code>`);
+        this.bind(i);
       },
-      choose(i, k) {
-        const st = steps[i], o = st.options[k];
-        const btn = document.querySelector(`#widget .opt[data-k="${k}"]`);
-        if (!btn || btn.disabled) return;
-        const res = runAt(o.code, i);
-        showRun(i, o.code, res);
-        if (o.ok) return solve(i, `${LETTERS[k]}: ${o.code}`);
-        btn.classList.add("bad");
-        wrong(i, `${LETTERS[k]} isn't it`, esc(o.why || "") + (res.ok ? "" : `<br><span class="muted">MongoDB says: <code>${esc(res.error)}</code></span>`) + "<br><span class='muted'>The phone shows what it did. Try another.</span>", `${LETTERS[k]}: ${o.code}`);
-      },
-      fill() {},
-      lock: lockOptions,
-      reveal(i) { this.choose(i, steps[i].options.findIndex((o) => o.ok)); },
-    },
+    }),
 
-    predict: {
+    predict: Object.assign({}, choiceBase, {
       draw(i) {
         const st = steps[i];
         $("widget").innerHTML = `<div class="code">${esc(st.query)}</div>` + optionButtons(st, (o) => `<span class="opt-text">${esc(o.text)}</span>`);
-        document.querySelectorAll("#widget .opt").forEach((b) => (b.onclick = () => this.choose(i, +b.dataset.k)));
+        this.bind(i);
       },
-      choose(i, k) {
-        const st = steps[i], o = st.options[k];
-        const btn = document.querySelector(`#widget .opt[data-k="${k}"]`);
-        if (!btn || btn.disabled) return;
-        showRun(i, st.query, runAt(st.query, i));
-        if (o.ok) return solve(i, `${LETTERS[k]}: ${o.text}`);
-        btn.classList.add("bad");
-        wrong(i, `${LETTERS[k]} isn't what happens`, esc(o.why || "") + "<br><span class='muted'>The query just ran: the phone shows what really happens. Pick the answer that matches it.</span>", `${LETTERS[k]}: ${o.text}`);
-      },
-      fill() {},
-      lock: lockOptions,
-      reveal(i) { this.choose(i, steps[i].options.findIndex((o) => o.ok)); },
-    },
+      // a prediction runs the given query, so the phone shows what really happens
+      codeFor: (i) => steps[i].query,
+      label: (i, k) => `${LETTERS[k]}: ${steps[i].options[k].text}`,
+    }),
   };
   // "fix the bug" is a choice with the broken query (and what mongosh said about it) on top
-  WIDGETS.bug = Object.assign(Object.create(WIDGETS.choice), {
+  WIDGETS.bug = Object.assign({}, WIDGETS.choice, {
     draw(i) {
       const st = steps[i], res = runAt(st.broken, i);
       $("widget").innerHTML = `<div class="broken"><div class="broken-label">The intern's query</div><div class="code">${esc(st.broken)}</div>
         <pre class="said ${res.ok ? "" : "err"}">${res.ok ? "→ " : "✖ "}${esc(short(res))}</pre></div>
         <div class="opts-label">Which one fixes it?</div>` + optionButtons(st, (o) => `<code class="opt-code">${esc(o.code)}</code>`);
-      document.querySelectorAll("#widget .opt").forEach((b) => (b.onclick = () => this.choose(i, +b.dataset.k)));
+      this.bind(i);
     },
   });
 
+  // practice mode only (no score sheet): start again
   function restart() {
-    if (progress.solved.length && !confirm("Restart the day from the first slide? Your progress on this device will be cleared" + (Score.user ? ", and your score in the class sheet starts again from 0." : "."))) return;
-    // tab switches stay counted across a restart
-    progress = Object.assign(fresh(), { activity: progress.activity });
+    if (answeredCount() && !confirm("Restart the day from the first slide? Your answers on this device will be cleared.")) return;
+    progress = fresh();
     save();
-    Score.sync();
     go(0);
   }
 
@@ -517,8 +621,8 @@
     const a = progress.activity = Object.assign({ tabs: 0, away: 0 }, progress.activity);
     a.tabs++;
     save();
-    const i = progress.at - 1; // -1 is the intro, N the finale
-    Score.event({ slide: i, op: steps[i] ? steps[i].op : i < 0 ? "intro" : "finale", kind, answer: detail });
+    const i = progress.at - 1; // -1 is the intro, N the results
+    Score.event({ slide: i, op: steps[i] ? steps[i].op : i < 0 ? "intro" : "results", kind, answer: detail });
   }
   const awayFor = (since, kind) => {
     const secs = Math.round((Date.now() - since) / 1000);
@@ -549,7 +653,7 @@
   window.addEventListener("hashchange", () => { const s = slideFromHash(); if (s !== null && s !== progress.at) go(s); });
 
   const start = slideFromHash();
-  progress.at = start !== null ? Math.max(0, Math.min(LAST, start)) : Math.min(progress.at, LAST);
+  progress.at = Math.max(0, Math.min(reach(), start !== null ? start : progress.at));
   setHash(progress.at);
   render();
 
@@ -558,10 +662,14 @@
   Score.init({
     getSnapshot: snapshot,
     onUser: switchOwner,
+    onSaved: fromServer,
     onChange: () => {
       renderAccount();
-      // redraw the slide when the sign-in gate opens or closes, or the intro's sign-in panel changes
-      const redraw = gated() !== wasGated || (progress.at === 0 && Score.status !== lastStatus && ["signin", "unavailable", "wrong-domain"].includes(Score.status));
+      // redraw when the sign-in gate opens or closes, the intro's sign-in panel changes,
+      // or the results are waiting on the leaderboard
+      const redraw = gated() !== wasGated
+        || (progress.at === 0 && Score.status !== lastStatus && ["signin", "unavailable", "wrong-domain"].includes(Score.status))
+        || (progress.at > N && finished() && !board && Score.status !== lastStatus);
       wasGated = gated(); lastStatus = Score.status;
       if (redraw) render();
     },

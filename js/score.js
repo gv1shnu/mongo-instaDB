@@ -17,7 +17,7 @@
     del(k, area = localStorage) { try { area.removeItem(k); } catch (e) {} },
   };
 
-  let opts = { getSnapshot: () => ({}), onUser: () => {}, onChange: () => {} };
+  let opts = { getSnapshot: () => ({}), onUser: () => {}, onChange: () => {}, onSaved: () => {} };
   let user = null;          // { email, name, picture, token, exp }
   let status = enabled ? "loading" : "off"; // off | loading | unavailable | signin | wrong-domain | saving | saved | offline | expired
   let detail = "";
@@ -141,6 +141,7 @@
         store.set(OUTBOX_KEY, outbox().filter((e) => !sent.has(e.id)));
         retryN = 0;
         setStatus("saved");
+        try { opts.onSaved(data); } catch (e) {}
         if (outbox().length) sync(300);
       } else if (data.code === 401) {
         store.del(AUTH_KEY, sessionStorage);
