@@ -115,6 +115,8 @@
 
   // ---------- rendering ----------
   const chapterOf = (st) => STORY.chapters.find((c) => c.id === st.chapter);
+  // chapter titles end in the topic, e.g. "(replaceOne, Delete)"; keep that out of sight until the end
+  const plainTitle = (t) => (finished() ? t : t.replace(/\s*\([^)]*\)\s*$/, ""));
 
   function render() {
     const s = progress.at;
@@ -179,7 +181,7 @@
       <div class="kinds">${Object.keys(MODES).filter((m) => counts[m]).map((m) => `<span class="tag mode-${m}">${MODES[m][0]} ${MODES[m][1]} · ${counts[m]}</span>`).join("")}</div>
       <ol class="agenda">${STORY.chapters.map((c) => {
         const nums = steps.map((s, k) => (s.chapter === c.id ? k + 1 : 0)).filter(Boolean);
-        const [time, what] = c.title.split(/:\s*/);
+        const [time, what] = plainTitle(c.title).split(/:\s*/);
         const range = nums.length > 1 ? `slides ${nums[0]}–${nums[nums.length - 1]}` : `slide ${nums[0]}`;
         return `<li><span class="ag-time">${esc(time)}</span><span class="ag-what">${esc(what)}</span><span class="ag-range">${range}</span></li>`;
       }).join("")}</ol>
@@ -237,8 +239,9 @@
   function renderStep(i) {
     const st = steps[i], [icon, label] = MODES[st.mode], a = answer(i);
     const pts = a ? `<span class="tag ${a.ok ? "pts-ok" : "pts-bad"}">${a.ok ? `+${pointsFor(i)}` : "0"} points</span>` : "";
-    $("slide").innerHTML = `<div class="eyebrow">${esc(chapterOf(st).title)}</div>
-      <div class="step-meta"><span class="num">${i + 1}</span><span class="tag mode-${st.mode}">${icon} ${label}</span><span class="tag">${esc(st.op)}</span>${st.trap ? '<span class="tag warn">⚠️ predict first</span>' : ""}${hinted(i) ? '<span class="tag hint-used">hint used</span>' : ""}${pts}</div>
+    // the topic tag (e.g. "insertOne()") names the answer, so it only appears once the exam is done
+    $("slide").innerHTML = `<div class="eyebrow">${esc(plainTitle(chapterOf(st).title))}</div>
+      <div class="step-meta"><span class="num">${i + 1}</span><span class="tag mode-${st.mode}">${icon} ${label}</span>${finished() ? `<span class="tag">${esc(st.op)}</span>` : ""}${st.trap ? '<span class="tag warn">⚠️ predict first</span>' : ""}${hinted(i) ? '<span class="tag hint-used">hint used</span>' : ""}${pts}</div>
       <div class="before big">${st.before}</div>
       <div id="widget"></div>
       <div class="hint-box" id="hint-box" ${hinted(i) ? "" : "hidden"}><b>Hint:</b> ${esc(st.hint)}</div>
