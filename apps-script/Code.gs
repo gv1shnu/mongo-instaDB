@@ -5,7 +5,8 @@
  * This script checks the student's Google sign-in token, accepts only
  * accounts from the university's email domains, and writes:
  *   - "Scores":   one row per student, updated in place
- *   - "Attempts": one row per answer (right, wrong, or "Show answer")
+ *   - "Attempts": one row per answer (right, wrong, or "Show answer"), and per
+ *                 tab switch, copy or paste
  *
  * Setup: see "Score tracking" in the project README.
  */
@@ -21,7 +22,10 @@ const SETTINGS = {
 };
 
 const SCORES_HEADERS = ["Email", "Name", "Score", "Out of", "Solved", "First try", "Answers shown", "Wrong tries",
-  "Current slide", "Finished", "First seen", "Last update", "Solved slides", "Shown slides"];
+  "Current slide", "Finished", "First seen", "Last update", "Solved slides", "Shown slides",
+  "Tab switches", "Time away (s)", "Copies", "Pastes"];
+const ACTIVITY_COL = 15; // first of the four activity columns
+const ACTIVITY_KINDS = ["left tab", "left window", "copy", "paste"];
 const ATTEMPTS_HEADERS = ["Time", "Email", "Slide", "Topic", "Result", "Answer given", "Event id"];
 
 function doGet() {
@@ -96,6 +100,7 @@ function summarize_(body) {
     wrong: wrong,
     at: at,
     finished: solved.length === outOf,
+    activity: ["tabs", "away", "copies", "pastes"].map((k) => Math.max(0, Math.min(1e6, parseInt((body.activity || {})[k], 10) || 0))),
   };
 }
 
@@ -110,6 +115,10 @@ function sheet_(name, headers) {
     sh.appendRow(headers);
     sh.setFrozenRows(1);
     sh.getRange(1, 1, 1, headers.length).setFontWeight("bold");
+  } else if (!sh.getRange(1, headers.length).getValue()) {
+    // a sheet made by an older version of this script: add the new column titles
+    sh.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sh.getRange(1, 1, 1, headers.length).setFontWeight("bold");
   }
   return sh;
 }
@@ -121,10 +130,12 @@ function writeScore_(user, s) {
   const row = found ? found.getRow() : sh.getLastRow() + 1;
   const firstSeen = found ? sh.getRange(row, 11).getValue() || now : now;
   const list = (a) => a.map((n) => n + 1).join(", ");
+  // activity counts only go up, so restarting or clearing the browser can't hide them
+  const activity = s.activity.map((n, k) => Math.max(n, found ? Number(sh.getRange(row, ACTIVITY_COL + k).getValue()) || 0 : 0));
   sh.getRange(row, 1, 1, SCORES_HEADERS.length).setValues([[
     text_(user.email, 200), text_(user.name, 200), s.score, s.outOf, s.solved.length, s.firstTry, s.shown.length, s.wrong,
     s.at, s.finished ? "yes" : "no", firstSeen, now, list(s.solved), list(s.shown),
-  ]]);
+  ].concat(activity)]);
 }
 
 function writeAttempts_(user, events) {
@@ -135,7 +146,7 @@ function writeAttempts_(user, events) {
     text_(user.email, 200),
     (parseInt(ev.slide, 10) || 0) + 1,
     text_(ev.op, 60),
-    ["solved", "wrong", "shown"].indexOf(ev.kind) >= 0 ? ev.kind : "other",
+    ["solved", "wrong", "shown"].concat(ACTIVITY_KINDS).indexOf(ev.kind) >= 0 ? ev.kind : "other",
     text_(ev.answer, 300),
     text_(ev.id, 40),
   ]);

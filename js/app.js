@@ -28,7 +28,7 @@
   // plus one for whoever hasn't signed in.
   const BASE_KEY = "instadb-deck-v1";
   let key = BASE_KEY;
-  const fresh = () => ({ at: 0, solved: [], tried: [], revealed: [], firstTry: [], wrong: {} });
+  const fresh = () => ({ at: 0, solved: [], tried: [], revealed: [], firstTry: [], wrong: {}, activity: { tabs: 0, away: 0, copies: 0, pastes: 0 } });
   function load(k) {
     try {
       const saved = JSON.parse(localStorage.getItem(k));
@@ -42,7 +42,7 @@
   const isSolved = (i) => progress.solved.includes(i);
   // score: slides solved without "Show answer"
   const scoreOf = (p) => p.solved.filter((i) => !p.revealed.includes(i)).length;
-  const snapshot = () => ({ slides: N, at: progress.at, solved: progress.solved, firstTry: progress.firstTry, revealed: progress.revealed, wrong: progress.wrong });
+  const snapshot = () => ({ slides: N, at: progress.at, solved: progress.solved, firstTry: progress.firstTry, revealed: progress.revealed, wrong: progress.wrong, activity: progress.activity });
 
   function switchOwner(u) {
     const nextKey = u ? BASE_KEY + ":" + u.email : BASE_KEY;
@@ -109,7 +109,7 @@
     $("next").classList.toggle("ready", s > 0 && s <= N && isSolved(s - 1));
     $("nav-note").textContent = gated() ? "Sign in with your university Google account to start."
       : s > 0 && s <= N && !canGoNext() ? "Answer this slide to unlock Next. A wrong try counts." : "";
-    $("jump").value = String(s);
+    $("counter").textContent = s === 0 ? "Intro" : s > N ? "The end" : `Slide ${s} of ${N}`;
   }
   function renderProgress() {
     const s = progress.at;
@@ -141,11 +141,13 @@
       <p class="lead">${STORY.intro}</p>
       <div class="kinds">${Object.keys(MODES).filter((m) => counts[m]).map((m) => `<span class="tag mode-${m}">${MODES[m][0]} ${MODES[m][1]} · ${counts[m]}</span>`).join("")}</div>
       <ol class="agenda">${STORY.chapters.map((c) => {
-        const first = steps.findIndex((s) => s.chapter === c.id);
-        return `<li><a href="#${first + 1}">${esc(c.title)}</a></li>`;
+        const nums = steps.map((s, k) => (s.chapter === c.id ? k + 1 : 0)).filter(Boolean);
+        const [time, what] = c.title.split(/:\s*/);
+        const range = nums.length > 1 ? `slides ${nums[0]}–${nums[nums.length - 1]}` : `slide ${nums[0]}`;
+        return `<li><span class="ag-time">${esc(time)}</span><span class="ag-what">${esc(what)}</span><span class="ag-range">${range}</span></li>`;
       }).join("")}</ol>
       ${signInPanel()}
-      <p class="muted small">Use <kbd>←</kbd> <kbd>→</kbd> to move between slides and <kbd>1</kbd>–<kbd>4</kbd> to pick an option.</p>`;
+`;
     resetTerminal();
     phone({ idle: true, before: SEED, spec: { time: "6:59" } });
   }
@@ -156,9 +158,10 @@
     if (!Score.enabled) return "";
     const u = Score.user;
     if (u) return `<div class="signin-panel ok"><b>Signed in as ${esc(u.email)}.</b> Your score is saved to the class sheet after every answer.
+      <span class="muted small">Switching tabs or windows, and copying or pasting, are recorded with your score.</span>
       <span class="muted" id="signin-detail">${esc(Score.detail)}</span></div>`;
     return `<div class="signin-panel"><b>Sign in with your university Google account</b> (${Score.domains.map((d) => `<code>@${esc(d)}</code>`).join(" or ")}) so your score is recorded.
-      Your personal Gmail won't work.${Score.status === "unavailable" ? "" : '<div class="g-signin"></div><span class="muted small">Nothing happens when you click? Allow pop-ups for this site, or open the link in Chrome instead of an app\'s built-in browser.</span>'}<span class="muted" id="signin-detail">${esc(Score.detail)}</span></div>`;
+      Your personal Gmail won't work. Once you're signed in, switching tabs or windows and copying or pasting are recorded with your score.${Score.status === "unavailable" ? "" : '<div class="g-signin"></div><span class="muted small">Nothing happens when you click? Allow pop-ups for this site, or open the link in Chrome instead of an app\'s built-in browser.</span>'}<span class="muted" id="signin-detail">${esc(Score.detail)}</span></div>`;
   }
   function renderGate() {
     $("slide").innerHTML = `<div class="eyebrow">Before you start</div>
@@ -238,6 +241,7 @@
     btn.textContent = "Copy";
     btn.setAttribute("aria-label", "Copy this document");
     const done = (ok) => {
+      if (ok) noteActivity("copy", "Copy button: the slide's document");
       if (!ok) { // no clipboard access: select the document so Ctrl+C copies it
         const range = document.createRange(); range.selectNodeContents(pre.firstChild);
         const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
@@ -250,7 +254,9 @@
       ta.style.cssText = "position:fixed;opacity:0";
       document.body.appendChild(ta); ta.select();
       let ok = false;
+      fromCopyButton = true;
       try { ok = document.execCommand("copy"); } catch (e) {}
+      fromCopyButton = false;
       ta.remove(); done(ok);
     };
     btn.onclick = () => {
@@ -373,14 +379,10 @@
     write: {
       draw(i) {
         $("widget").innerHTML = `<textarea class="editor" id="editor" rows="3" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Your query" placeholder="Type the whole query, e.g. db.collection.method( ... )"></textarea>
-          <p class="kbd-tip">Press <kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>Enter</kbd> to run. Watch the phone.</p>`;
+          <p class="kbd-tip">Press <b>Run ▶</b> and watch the phone.</p>`;
         const ed = $("editor");
         const grow = () => { ed.style.height = "auto"; ed.style.height = ed.scrollHeight + 2 + "px"; };
         ed.addEventListener("input", () => { grow(); ed.classList.remove("bad", "ok"); });
-        ed.addEventListener("keydown", (e) => {
-          if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); this.check(i); }
-          else if (e.key === "Tab" && !e.shiftKey) { e.preventDefault(); ed.setRangeText("  ", ed.selectionStart, ed.selectionEnd, "end"); }
-        });
         $("run").onclick = () => this.check(i);
       },
       check(i) {
@@ -414,8 +416,8 @@
           const state = ui.marks ? (ui.marks[k] ? "ok" : "bad") : "";
           return `<button class="slot ${v ? "filled" : ""} ${k === ui.active && !ui.locked ? "active" : ""} ${state}" data-k="${k}" aria-label="blank ${k + 1}">${v ? esc(v) : "&nbsp;?&nbsp;"}</button>`;
         }).join("");
-        const chips = ui.locked ? "" : chipsFor(st, blanks[ui.active]).map((c, n) =>
-          `<button class="pick-chip ${ui.picks[ui.active] === c ? "on" : ""}" data-v="${esc(c)}"><kbd>${n + 1}</kbd> ${esc(c)}</button>`).join("");
+        const chips = ui.locked ? "" : chipsFor(st, blanks[ui.active]).map((c) =>
+          `<button class="pick-chip ${ui.picks[ui.active] === c ? "on" : ""}" data-v="${esc(c)}">${esc(c)}</button>`).join("");
         $("widget").innerHTML = `<div class="code pick-code">${code}</div>` +
           (ui.locked ? "" : `<div class="bank"><span class="bank-label">${blanks.length > 1 ? `Blank ${ui.active + 1} of ${blanks.length}` : "Pick one"}</span>${chips}</div>`);
         document.querySelectorAll("#widget .slot").forEach((b) => (b.onclick = () => { if (ui.locked) return; ui.active = +b.dataset.k; this.draw(i); }));
@@ -428,7 +430,6 @@
         this.draw(i);
         this.check(i);
       },
-      key(i, n) { const st = steps[i], c = chipsFor(st, blanksOf(st)[ui.active])[n]; if (c !== undefined && !ui.locked) this.choose(i, c); },
       check(i) {
         const st = steps[i], blanks = blanksOf(st), code = assemble(st.code, ui.picks);
         const res = runAt(code, i);
@@ -466,7 +467,6 @@
         btn.classList.add("bad");
         wrong(i, `${LETTERS[k]} isn't it`, esc(o.why || "") + (res.ok ? "" : `<br><span class="muted">MongoDB says: <code>${esc(res.error)}</code></span>`) + "<br><span class='muted'>The phone shows what it did. Try another.</span>", `${LETTERS[k]}: ${o.code}`);
       },
-      key(i, n) { if (n < steps[i].options.length) this.choose(i, n); },
       fill() {},
       lock: lockOptions,
       reveal(i) { this.choose(i, steps[i].options.findIndex((o) => o.ok)); },
@@ -487,7 +487,6 @@
         btn.classList.add("bad");
         wrong(i, `${LETTERS[k]} isn't what happens`, esc(o.why || "") + "<br><span class='muted'>The query just ran: the phone shows what really happens. Pick the answer that matches it.</span>", `${LETTERS[k]}: ${o.text}`);
       },
-      key(i, n) { if (n < steps[i].options.length) this.choose(i, n); },
       fill() {},
       lock: lockOptions,
       reveal(i) { this.choose(i, steps[i].options.findIndex((o) => o.ok)); },
@@ -504,36 +503,65 @@
     },
   });
 
-  // ---------- keyboard ----------
-  document.addEventListener("keydown", (e) => {
-    const t = e.target;
-    if (e.ctrlKey || e.metaKey || e.altKey) return;
-    // inside the query box, arrows move the cursor; they turn the slide only while the box is empty
-    const typing = t && (t.tagName === "INPUT" || (t.tagName === "TEXTAREA" && t.value.trim() && !t.disabled));
-    if (typing) return;
-    if (e.key === "ArrowRight") { e.preventDefault(); next(); }
-    else if (e.key === "ArrowLeft") { e.preventDefault(); prev(); }
-    else if (/^[1-4]$/.test(e.key) && progress.at > 0 && progress.at <= N) {
-      const i = progress.at - 1, w = WIDGETS[steps[i].mode];
-      if (w.key && !isSolved(i)) { e.preventDefault(); w.key(i, +e.key - 1); }
-    }
-  });
-
   function restart() {
     if (progress.solved.length && !confirm("Restart the day from the first slide? Your progress on this device will be cleared" + (Score.user ? ", and your score in the class sheet starts again from 0." : "."))) return;
-    progress = fresh();
+    // tab switches and copy/paste stay counted across a restart
+    progress = Object.assign(fresh(), { activity: progress.activity });
     save();
     Score.sync();
     go(0);
   }
 
+  // ---------- activity: tab switches, copy and paste ----------
+  // Recorded only for signed-in students, who are told so on the sign-in panel.
+  let fromCopyButton = false, hiddenAt = 0, blurAt = 0;
+  const clip = (t, n) => { t = String(t || "").replace(/\s+/g, " ").trim(); return t.length > n ? t.slice(0, n) + "…" : t; };
+  function noteActivity(kind, detail) {
+    if (!Score.user) return;
+    const a = progress.activity = Object.assign({ tabs: 0, away: 0, copies: 0, pastes: 0 }, progress.activity);
+    if (kind === "left tab" || kind === "left window") a.tabs++;
+    if (kind === "copy") a.copies++;
+    if (kind === "paste") a.pastes++;
+    save();
+    const i = progress.at - 1; // -1 is the intro, N the finale
+    Score.event({ slide: i, op: steps[i] ? steps[i].op : i < 0 ? "intro" : "finale", kind, answer: detail });
+  }
+  const awayFor = (since, kind) => {
+    const secs = Math.round((Date.now() - since) / 1000);
+    progress.activity = Object.assign({ tabs: 0, away: 0, copies: 0, pastes: 0 }, progress.activity);
+    if (Score.user) progress.activity.away += secs;
+    noteActivity(kind, `away ${secs} s`);
+  };
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) { hiddenAt = Date.now(); blurAt = 0; }
+    else if (hiddenAt) { awayFor(hiddenAt, "left tab"); hiddenAt = 0; }
+  });
+  // another window or app in front while this tab stays visible; clicks into the
+  // Google sign-in button (an iframe) and blurs shorter than 3 s don't count
+  window.addEventListener("blur", () => setTimeout(() => {
+    const el = document.activeElement;
+    if (!document.hidden && !(el && el.tagName === "IFRAME")) blurAt = Date.now();
+  }, 0));
+  window.addEventListener("focus", () => {
+    if (blurAt && !document.hidden && Date.now() - blurAt >= 3000) awayFor(blurAt, "left window");
+    blurAt = 0;
+  });
+  const onCopy = (e) => {
+    if (fromCopyButton) return;
+    const sel = String(window.getSelection() || "") || (e.target && e.target.value ? e.target.value.slice(e.target.selectionStart, e.target.selectionEnd) : "");
+    noteActivity("copy", `${e.type === "cut" ? "cut" : "copied"} ${sel.length} chars: ${clip(sel, 120)}`);
+  };
+  document.addEventListener("copy", onCopy);
+  document.addEventListener("cut", onCopy);
+  document.addEventListener("paste", (e) => {
+    const text = (e.clipboardData && e.clipboardData.getData("text")) || "";
+    const given = [...document.querySelectorAll("#slide .given")].map((g) => clip(g.firstChild && g.firstChild.textContent, 100000));
+    const place = e.target && e.target.id === "editor" ? "the query box" : "the page";
+    const fromForm = given.length && given.some((g) => clip(text, 100000) === g) ? " (the slide's own document)" : "";
+    noteActivity("paste", `pasted ${text.length} chars into ${place}${fromForm}: ${clip(text, 160)}`);
+  });
+
   // ---------- wiring ----------
-  $("jump").innerHTML = `<option value="0">Intro</option>` +
-    steps.map((st, i) => `<option value="${i + 1}">${i + 1}. ${esc(st.op)} (${esc(st.screen.time)})</option>`).join("") +
-    `<option value="${LAST}">Finale</option>`;
-  $("jump").onchange = (e) => { e.target.blur(); go(+e.target.value); };
-  // the jump menu would otherwise eat ← → and change slides one option at a time
-  $("jump").addEventListener("keydown", (e) => { if (e.key === "ArrowLeft" || e.key === "ArrowRight") e.target.blur(); });
   $("prev").onclick = prev;
   $("next").onclick = next;
   $("restart").onclick = restart;

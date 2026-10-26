@@ -163,12 +163,16 @@ td.missing { color: var(--muted); }
 .slide-title { font-size: 28px; letter-spacing: -0.01em; margin: 0 0 10px; }
 .lead { font-size: 17px; color: var(--ink-2); margin: 0 0 16px; }
 .kinds { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
-.agenda { margin: 0 0 16px; padding-left: 22px; color: var(--ink-2); }
-.agenda li { margin: 4px 0; }
-.agenda a, .finale a, .slide .muted a { color: var(--brand); }
+/* the day at a glance: plain text, not links */
+.agenda { list-style: none; margin: 0 0 16px; padding: 0; border-left: 2px solid var(--line); }
+.agenda li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 5px 0 5px 14px; color: var(--ink-2); font-size: 15px; }
+.ag-time { min-width: 118px; font-weight: 700; color: var(--ink); }
+.ag-what { flex: 1; min-width: 180px; }
+.ag-range { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.finale a, .slide .muted a { color: var(--brand); }
 
 .deck-nav { display: flex; align-items: center; gap: 10px; }
-.deck-nav select { flex: 1; min-width: 0; font: 14px var(--sans); padding: 9px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
+.counter { flex: 1; text-align: center; font-size: 14px; font-weight: 600; color: var(--ink-2); }
 .deck-nav .btn { padding: 10px 18px; }
 #next.ready { box-shadow: 0 0 0 3px rgba(194, 24, 91, .25); }
 .nav-note { min-height: 20px; margin: 6px 2px 14px; font-size: 13px; color: var(--muted); }
@@ -195,7 +199,6 @@ td.missing { color: var(--muted); }
 .pick-chip { font: 600 15px var(--mono); border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); padding: 8px 14px; border-radius: 10px; cursor: pointer; }
 .pick-chip:hover, .pick-chip:focus-visible { border-color: var(--brand); color: var(--brand); }
 .pick-chip.on { border-color: var(--brand); background: var(--surface-2); }
-.pick-chip kbd { font-size: 11px; margin-right: 4px; color: var(--muted); }
 
 .opts { display: grid; gap: 8px; margin-top: 12px; }
 .opts-label { margin-top: 14px; font-weight: 700; font-size: 14px; }

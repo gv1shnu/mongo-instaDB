@@ -30,7 +30,7 @@ Every option is a real query: whatever the student picks runs on the data and sh
 - No server, no database, no install. A small query engine (`js/engine.js`) runs MongoDB-style queries in the browser with MongoDB's behaviour for the cases in the lab: missing fields with `$ne`/`$not`, matching inside arrays, and sort → skip → limit order. `$currentDate` uses the time on each step's phone screen, so answers can be checked.
 - `js/phone.js` draws the preview: profile grids, Explore, people lists, ranked feeds, update highlights (+100 likes, added/removed interests, added/removed/changed fields, "just verified") and deleted posts.
 - Write slides are checked by result; the other slides by the option picked. Every query is also run, and its output is shown in a mongosh-style terminal, including real error messages for mistakes such as unknown operators.
-- Each slide has its own address (`#12`), so a teacher can project a slide and students can open the same one. The jump menu goes to any slide; ← → move between slides and 1–4 pick an option.
+- Each slide has its own address (`#12`), so a teacher can project a slide and students can open the same one.
 - On a phone-sized screen, the app preview becomes a bottom sheet that slides up after each answer.
 - Progress is saved in the student's browser (localStorage), one copy per signed-in student, so a shared lab computer keeps students apart.
 - Score tracking is optional (see below). Without it, nothing is collected.
@@ -53,8 +53,19 @@ Every option is a real query: whatever the student picks runs on the data and sh
 Students sign in with their **university Google account**, and each one's score lands in a Google Sheet you own. Only `@nst.rishihood.edu.in` (students) and `@rishihood.edu.in` (staff) accounts can sign in; personal Gmail and any other domain are refused. Staff who sign in to test get a row in the sheet too.
 
 **What you get in the sheet**
-- **Scores:** one row per student: score, slides solved, how many on the first try, how many with "Show answer", wrong tries, the slide they're on, finished or not, first seen and last update.
+- **Scores:** one row per student: score, slides solved, how many on the first try, how many with "Show answer", wrong tries, the slide they're on, finished or not, first seen and last update. Then **Tab switches**, **Time away (s)**, **Copies** and **Pastes**.
 - **Attempts:** one row per answer, with the slide, right / wrong / shown, and what they picked (for example `C: db.posts.insertMany(...)`). This shows which wrong answers are common.
+  It also gets a row each time a student:
+  - **left tab:** switched to another tab or minimised the browser, with how long they were away
+  - **left window:** put another app or window in front for more than 3 seconds
+  - **copy:** copied or cut text, with what they copied (the slide's Copy button is labelled as such)
+  - **paste:** pasted text, with where, what, and whether it was just the slide's own document
+
+**About the activity tracking**
+- Students are told on the sign-in panel that switching tabs and copying or pasting are recorded.
+- Only signed-in students are tracked.
+- The counts never go down: restarting the day or clearing the browser doesn't reset them in the sheet.
+- These are signals to look at, not proof of cheating. Pasting the slide's own document is expected on write slides, and leaving the tab can mean anything from a notification to looking something up.
 
 **Score** = slides solved without "Show answer", out of 35. Wrong tries don't cost points, but they're counted.
 
