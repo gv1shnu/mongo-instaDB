@@ -369,13 +369,8 @@
   }
 
   // ---------- solutions (only once every slide is answered) ----------
-  function rightAnswerHTML(i) {
-    const st = steps[i];
-    if (st.mode === "write") return `<code class="sol-code">${esc(st.answer)}</code>`;
-    if (st.mode === "pick") return `<code class="sol-code">${st.code.map((p) => (typeof p === "string" ? esc(p) : `<mark>${esc(p.b)}</mark>`)).join("")}</code>`;
-    const k = st.options.findIndex((o) => o.ok), o = st.options[k];
-    return `<b>${LETTERS[k]}.</b> ${st.mode === "predict" ? esc(o.text) : `<code class="sol-code">${esc(o.code)}</code>`}`;
-  }
+  // a fill-in-the-blank solution, with the chosen chips highlighted
+  const filledCode = (st) => st.code.map((p) => (typeof p === "string" ? esc(p) : `<mark>${esc(p.b)}</mark>`)).join("");
   function whyWrong(i) {
     const st = steps[i], a = answer(i);
     if (!a || a.ok || a.sel == null) return "";
@@ -386,16 +381,37 @@
     }
     return esc((st.options[a.sel] || {}).why || "");
   }
-  function solutionHTML(i, open) {
+  // the question exactly as the slide asked it, options included
+  function questionHTML(i) {
+    const st = steps[i], a = answer(i) || {};
+    let extra = "";
+    if (st.mode === "pick") extra = `<pre class="code sol-q-code">${st.code.map((p) => (typeof p === "string" ? esc(p) : '<span class="sol-blank">____</span>')).join("")}</pre>`;
+    if (st.mode === "bug") extra = `<p class="sol-sub">The query that fails:</p><pre class="code sol-q-code">${esc(st.broken)}</pre>`;
+    if (st.mode === "predict") extra = `<pre class="code sol-q-code">${esc(st.query)}</pre>`;
+    if (st.options) extra += `<ol class="sol-opts">${st.options.map((o, k) => {
+      const tags = (o.ok ? '<span class="sol-tag ok">right answer</span>' : "") + (a.sel === k ? `<span class="sol-tag ${o.ok ? "ok" : "bad"}">your pick</span>` : "");
+      return `<li class="${o.ok ? "right" : a.sel === k ? "mine" : ""}"><b>${LETTERS[k]}.</b> ${o.code ? `<code class="sol-code">${esc(o.code)}</code>` : esc(o.text)} ${tags}</li>`;
+    }).join("")}</ol>`;
+    return `<div class="sol-q">${st.before}${extra}</div>`;
+  }
+  // withQuestion: the results page repeats the question; under a slide it's already on screen
+  function solutionHTML(i, open, withQuestion) {
     const st = steps[i], a = answer(i) || { ok: false, given: "" };
-    const why = whyWrong(i);
+    const why = whyWrong(i), code = canonical(st);
+    const right = st.options && st.options.find((o) => o.ok);
+    const rightPick = right && st.mode === "predict" && !a.ok ? `<p><span class="sol-label">Right answer</span><b>${LETTERS[st.options.indexOf(right)]}.</b> ${esc(right.text)}</p>` : "";
     return `<details class="sol ${a.ok ? "ok" : "bad"}" ${open ? "open" : ""}>
       <summary><span class="sol-num">${i + 1}</span><span class="sol-op">${esc(st.op)}</span><span class="sol-kind">${MODES[st.mode][0]}</span>
         <span class="sol-pts">${a.ok ? "✓" : "✗"} ${pointsFor(i)}/${POINTS}${hinted(i) ? " · hint" : ""}</span></summary>
       <div class="sol-body">
+        ${withQuestion ? `<span class="sol-label">Question</span>${questionHTML(i)}` : ""}
         <p><span class="sol-label">Your answer</span>${a.given ? `<code class="sol-code">${esc(a.given)}</code>` : "<i>none</i>"}</p>
-        ${a.ok ? "" : `<p><span class="sol-label">Right answer</span>${rightAnswerHTML(i)}</p>`}
         ${why ? `<p><span class="sol-label">Why yours isn't right</span>${why}</p>` : ""}
+        ${rightPick}
+        ${right && right.why ? `<p><span class="sol-label">Why it's right</span>${esc(right.why)}</p>` : ""}
+        <span class="sol-label">${st.mode === "predict" ? "The query and its output" : "Solution and its output"}</span>
+        ${st.mode === "pick" ? `<pre class="code sol-q-code">${filledCode(st)}</pre>` : ""}
+        <pre class="terminal sol-out">${runText(code, runAt(code, i), states[i])}</pre>
         <p><span class="sol-label">What happens</span>${st.after}</p>
         ${st.trapNote ? `<p class="trap">${st.trapNote}</p>` : ""}
       </div></details>`;
@@ -450,9 +466,14 @@
       ${leaderboardHTML()}
       ${breakdownHTML()}
       <h3 class="res-h">Solutions</h3>
-      <label class="only-wrong"><input type="checkbox" id="only-wrong"> Show only the ones I got wrong</label>
-      <div class="sols" id="sols">${steps.map((s, i) => solutionHTML(i, false)).join("")}</div>`;
+      <div class="sol-tools"><label class="only-wrong"><input type="checkbox" id="only-wrong"> Show only the ones I got wrong</label><button class="btn" id="open-all" type="button">Open all</button></div>
+      <div class="sols" id="sols">${steps.map((s, i) => solutionHTML(i, false, true)).join("")}</div>`;
     $("only-wrong").onchange = (e) => $("sols").classList.toggle("only-wrong", e.target.checked);
+    $("open-all").onclick = () => {
+      const all = [...document.querySelectorAll("#sols .sol")], open = !all.every((d) => d.open);
+      all.forEach((d) => (d.open = open));
+      $("open-all").textContent = open ? "Close all" : "Open all";
+    };
   }
 
   // A Copy button on a given document, so write slides test the query, not retyping the fields.
@@ -506,7 +527,8 @@
     phone({ res, before: states[i], after: res.ok ? res.state : null, spec: steps[i].screen });
     if (window.matchMedia("(max-width: 940px)").matches) $("phone-col").classList.add("open");
   }
-  function terminal(code, res, before) {
+  function terminal(code, res, before) { $("output").innerHTML = runText(code, res, before); }
+  function runText(code, res, before) {
     let body;
     if (!res.ok) body = `<span class="err">${esc(res.error)}</span>`;
     else {
@@ -520,7 +542,7 @@
         } else body += `\n<span class="muted">// now: ${res.state.users.length} users, ${res.state.posts.length} posts</span>`;
       } else body = esc(E.show(v));
     }
-    $("output").innerHTML = `instaDB&gt; ${esc(code)}\n${body}`;
+    return `instaDB&gt; ${esc(code)}\n${body}`;
   }
   const short = (res) => (res.ok ? E.show(res.value).replace(/\s*\n\s*/g, " ") : res.error);
   const record = (i, kind, detail) => Score.event({ slide: i, op: steps[i].op, kind, answer: String(detail == null ? "" : detail).slice(0, 300) });

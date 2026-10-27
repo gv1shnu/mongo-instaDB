@@ -44,6 +44,7 @@ expect("deleteMany: $lte fails (Meera's reel at 100)", same("deleteMany()", "db.
 // Every option runs. A wrong option must change something the student can see
 // (a different result, or an error), unless it carries a note explaining why it's still wrong.
 const writes = STORY.steps.filter((s) => s.mode === "write").length;
+STORY.steps.forEach((st, i) => (st.options || []).forEach((o, k) => { if (o.ok && !o.why) { fail++; console.log(`FAIL  step ${i + 1} right option ${"ABCD"[k]} has no why`); } }));
 expect(`5 or 6 write steps (${writes})`, writes >= 5 && writes <= 6, true);
 STORY.steps.forEach((st, i) => {
   const now = stepNow(st), want = run(canon(st), states[i], { now });

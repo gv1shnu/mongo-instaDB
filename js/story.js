@@ -53,7 +53,7 @@
           task("Add <b>both</b> posts to the <code>posts</code> collection in a <b>single</b> command. <b>Pick the query.</b>"),
         options: [
           { code: `db.posts.insertOne([ ${POST1}, ${POST2} ])`, why: "insertOne takes exactly one document, not a list. MongoDB refuses it." },
-          { code: `db.posts.insertMany([ ${POST1}, ${POST2} ])`, ok: true },
+          { code: `db.posts.insertMany([ ${POST1}, ${POST2} ])`, ok: true, why: "insertMany takes one list in square brackets [ ], and that list holds both posts, so the reel and the photo go in with a single command." },
           { code: `db.posts.insertMany(${POST1}, ${POST2})`, why: "insertMany needs the documents inside square brackets [ ], as one list. Without them, MongoDB refuses it." },
           { code: `db.posts.insertMany([ ${POST1} ])`, why: "Right method and brackets, but the list holds only the reel, so the Studio selfie is never posted." },
         ],
@@ -107,7 +107,7 @@
         options: [
           { code: 'db.users.find({ interests: { $in: ["travel", "photography"] } })', why: "$in needs only ONE of the values, so neha_eats (travel, no photography) sneaks in." },
           { code: 'db.users.find({ interests: ["travel", "photography"] })', why: "A plain array means \"exactly this list, in this order\". Arjun's list is the other way round, so only Rohan matches." },
-          { code: 'db.users.find({ interests: { $all: ["travel", "photography"] } })', ok: true },
+          { code: 'db.users.find({ interests: { $all: ["travel", "photography"] } })', ok: true, why: "$all matches only when the array contains every value in the list, in any order, so a user needs both travel and photography." },
           { code: 'db.users.find({ interests: { $eq: ["photography", "travel"] } })', why: "$eq with an array also means \"exactly this list, in this order\". Now only Arjun matches." },
         ],
         hint: "One operator needs just one of the values. Another needs every value in the list, in any order.",
@@ -140,7 +140,7 @@
         broken: 'db.users.find({ $or: { city: "Delhi" }, { followers: { $gt: 100000 } } })',
         options: [
           { code: 'db.users.find({ $or: ( { city: "Delhi" }, { followers: { $gt: 100000 } } ) })', why: "Round brackets don't make a list. JavaScript keeps only the last condition, and $or refuses anything that isn't an array." },
-          { code: 'db.users.find({ $or: [ { city: "Delhi" }, { followers: { $gt: 100000 } } ] })', ok: true },
+          { code: 'db.users.find({ $or: [ { city: "Delhi" }, { followers: { $gt: 100000 } } ] })', ok: true, why: "$or takes an array [ ] of conditions, each wrapped in its own { }. A user matches if any one of them holds: city is Delhi, or more than 100,000 followers." },
           { code: 'db.users.find({ city: "Delhi", followers: { $gt: 100000 } })', why: "This runs, but two conditions side by side mean AND. Nobody in Delhi has 100,000 followers, so the list is empty." },
           { code: 'db.users.find({ $or: [ city: "Delhi", followers: { $gt: 100000 } ] })', why: "Square brackets are right, but each condition inside them needs its own { }." },
         ],
@@ -155,7 +155,7 @@
         query: 'db.users.find({ accountType: { $ne: "creator" } })',
         options: [
           { text: "Only the 3 users whose accountType is \"personal\" or \"business\": neha_eats, kabir.fit, ananya.reads", why: "That's what most people expect. But $ne also matches documents that don't have the field at all." },
-          { text: "Those 3, plus sara.draws and rohan_travels, who have no accountType at all", ok: true },
+          { text: "Those 3, plus sara.draws and rohan_travels, who have no accountType at all", ok: true, why: "$ne matches every document whose accountType is not equal to \"creator\". A document with no accountType isn't equal to \"creator\" either, so sara.draws and rohan_travels are in the list too." },
           { text: "Nobody: sara.draws and rohan_travels have no accountType, so the query fails", why: "A missing field never makes a query fail. It just affects which documents match." },
           { text: "All 9 users", why: "The 4 creators have accountType \"creator\", so $ne leaves them out." },
         ],
@@ -181,7 +181,7 @@
         query: "db.users.find({ age: { $not: { $gt: 25 } } })",
         options: [
           { text: "kabir.fit", why: "Kabir is 27, which is greater than 25, so $not { $gt: 25 } leaves him out, just like $lte does." },
-          { text: "rohan_travels", ok: true },
+          { text: "rohan_travels", ok: true, why: "rohan_travels has no age, so \"age greater than 25\" is false for him, and $not turns false into true. $lte needs an age to compare, so it leaves him out." },
           { text: "sara.draws", why: "Sara is 26, which is greater than 25, so both queries leave her out." },
           { text: "meera.dance", why: "Meera is 20: not greater than 25, and also at most 25, so she's in both lists." },
         ],
@@ -272,7 +272,7 @@
           { code: 'db.users.updateOne({ username: "ishaan.films" }, { $set: { city: "Jaipur", followers: 0 } })', why: "There's no ishaan.films yet, so the filter matches nothing: matchedCount 0, and nothing is saved." },
           { code: 'db.users.insertOne({ username: "ishaan.films", city: "Jaipur", followers: 0 })', why: "It works today, but if the account already existed this would create a second ishaan.films. The task needs update-or-create." },
           { code: 'db.users.updateOne({ username: "ishaan.films" }, { $set: { city: "Jaipur", followers: 0 }, upsert: true })', why: "upsert is an option, not part of the update. It goes in a third argument: { upsert: true }." },
-          { code: 'db.users.updateOne({ username: "ishaan.films" }, { $set: { city: "Jaipur", followers: 0 } }, { upsert: true })', ok: true },
+          { code: 'db.users.updateOne({ username: "ishaan.films" }, { $set: { city: "Jaipur", followers: 0 } }, { upsert: true })', ok: true, why: "{ upsert: true } in the third argument means: update ishaan.films if he exists, otherwise create him from the filter's username plus the $set fields. One command covers both cases." },
         ],
         hint: "updateOne takes a third argument for options. One of them creates the document when nothing matches.",
         after: "matchedCount 0, upsertedCount 1: nothing matched, so MongoDB created the document from the filter's username plus the $set fields, with a new <code>_id</code>. Run it again and it would just update him.",
@@ -286,7 +286,7 @@
         broken: 'db.posts.deleteMany({ username: "riya_codes" })',
         options: [
           { code: 'db.posts.deleteMany({ username: "riya_codes" }).limit(1)', why: "limit() belongs to find() cursors. deleteMany has already deleted both posts and returned a plain result, which has no limit()." },
-          { code: 'db.posts.deleteOne({ username: "riya_codes" })', ok: true },
+          { code: 'db.posts.deleteOne({ username: "riya_codes" })', ok: true, why: "deleteOne removes only the first document that matches the filter, so one of Riya's posts goes and the other stays." },
           { code: 'db.posts.deleteOne("riya_codes")', why: "The filter has to be an object that names the field: { username: \"riya_codes\" }." },
           { code: 'db.posts.deleteOne({ caption: "riya_codes" })', why: "riya_codes is a username, not a caption, so nothing matches and nothing is deleted." },
         ],

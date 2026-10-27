@@ -404,7 +404,7 @@ div.before.big { margin: 8px 0 16px; }
 .sol-body p { margin: 8px 0; }
 .sol-label { display: block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 2px; }
 .sol-code { font-size: 13px; white-space: pre-wrap; word-break: break-word; }
-.sol-code mark { background: #ffe9a8; color: #1f1530; border-radius: 3px; padding: 0 2px; }
+.sol-code mark, .sol-q-code mark { background: #ffe9a8; color: #1f1530; border-radius: 3px; padding: 0 2px; }
 #solution .sol { margin-top: 14px; }
 @media (max-width: 560px) { .sol-body { padding-left: 12px; } .score-big b { font-size: 44px; } }
 
@@ -416,3 +416,19 @@ div.before.big { margin: 8px 0 16px; }
 @keyframes timerPulse { 50% { opacity: .55; } }
 @media (prefers-reduced-motion: reduce) { .timer.urgent { animation: none; } }
 .auto-next { margin: 10px 0 0; font-size: 14px; color: var(--ink-2); }
+/* solution cards: the full question, the solution's output, and why it's right */
+.sol-tools { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin: 4px 0 8px; }
+.sol-tools .only-wrong { margin: 0; }
+.sol-q { border: 1px solid var(--line); border-radius: 8px; padding: 4px 12px; margin: 2px 0 12px; background: var(--surface); }
+.sol-q .task { margin: 8px 0; }
+.sol-q-code { font-size: 13px; line-height: 1.6; margin: 6px 0; }
+.sol-blank { color: #ffd166; font-weight: 700; }
+.sol-sub { margin: 8px 0 0; font-size: 13px; color: var(--muted); }
+.sol-opts { list-style: none; padding: 0; margin: 8px 0; }
+.sol-opts li { padding: 6px 8px; border-radius: 6px; margin: 4px 0; border: 1px solid transparent; }
+.sol-opts li.right { border-color: var(--ok); }
+.sol-opts li.mine { border-color: var(--bad); }
+.sol-tag { display: inline-block; font: 700 11px var(--sans); padding: 1px 6px; border-radius: 999px; margin-left: 4px; color: #fff; vertical-align: middle; }
+.sol-tag.ok { background: var(--ok); }
+.sol-tag.bad { background: var(--bad); }
+.sol-out { background: var(--term-bg); border-radius: 8px; max-height: 260px; font-size: 12.5px; margin: 0 0 8px; }
