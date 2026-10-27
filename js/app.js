@@ -295,18 +295,16 @@
     stopTimer();
     if (answer(i) || progress.at !== i + 1) return;
     const st = steps[i];
-    if (WIDGETS[st.mode].value(i) != null) submit(i, true);
-    else {
-      progress.answers[i] = { ok: false, given: TIMEOUT, sel: null, timeout: true };
-      save();
-      record(i, "timeout", "");
-      ui = {};
-      renderStep(i);
-      renderNav(); renderProgress(); renderAccount();
-    }
+    if (WIDGETS[st.mode].value(i) != null) return submit(i, true);
+    progress.answers[i] = { ok: false, given: TIMEOUT, sel: null, timeout: true };
+    save();
+    record(i, "timeout", "");
+    ui = {};
+    renderStep(i);
+    renderNav(); renderProgress(); renderAccount();
     autoNext(i);
   }
-  // after a time-out, show the result for a moment, then move on by itself
+  // after any submit or time-out, show the result for a moment, then move on by itself
   let autoTimer = null;
   const stopAutoNext = () => { clearInterval(autoTimer); autoTimer = null; };
   function autoNext(i) {
@@ -344,6 +342,7 @@
     ui = {};
     renderStep(i);
     renderNav(); renderProgress(); renderAccount();
+    autoNext(i);
   }
 
   // a submitted slide: the student's own answer, locked, and what it did on the phone
