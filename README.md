@@ -1,8 +1,18 @@
 # One Day on instaDB
 
-A story-driven slide-deck exam on MongoDB CRUD (Lecture 2) and query and update operators (Lecture 3), built on the instaDB seed data used in the lab.
+A story-driven way to learn MongoDB CRUD and query and update operators: one day in the life of instaDB, a small Instagram-style app, told in 24 interactive slides.
 
-Students follow instaDB through one day in 24 slides, one question per slide, with **Prev / Next**. A new user, Meera, signs up at 7 a.m., and her account and posts carry through the rest of the day. A phone-style preview stays beside every slide and re-renders the app from whatever the query returned or changed, wrong answers included.
+**Play it:** https://www.vishnugandarapu.in/mongo-instaDB (no sign-up, runs entirely in your browser)
+
+I built it as a lab exercise for the MongoDB course at Rishihood University, where students in four sections took it as a timed, scored exam with Google sign-in and a class leaderboard. After the lab, the exam features (sign-in and score sheet) were switched off, and it's now open to anyone as practice. They're still in the code and come back by filling in `js/config.js`.
+
+**What makes it different**
+- **A story, not a worksheet.** Every query moves the same day forward, from a 7 a.m. sign-up to a midnight cleanup, and each change carries into the next slide.
+- **Every answer really runs.** A small MongoDB engine written for this project runs each query in the browser, wrong answers included, with MongoDB's behaviour for the tricky cases (missing fields with `$ne`/`$not`, matching inside arrays).
+- **You see what your query did.** A phone-style preview redraws the app from the result: the profile grid, the Explore page, +100 likes, a new blue tick, deleted posts.
+- **Questions stand on their own.** Every slide gives all the facts its options rely on, and an automated test fails if an option brings in a name or number the question doesn't give.
+
+You follow instaDB through one day in 24 slides, one question per slide, with **Prev / Next**. A new user, Meera, signs up at 7 a.m., and her account and posts carry through the rest of the day. A phone-style preview stays beside every slide and re-renders the app from whatever the query returned or changed, wrong answers included.
 
 | Slide type | Count | What the student does |
 |---|---|---|
@@ -16,19 +26,19 @@ The slides cover only what every section was taught: Chapter 2 of the [Atlas She
 
 Every option is a real query: what the student submits runs on the data and shows up on the phone and in the terminal.
 
-**Exam rules**
+**How it plays**
 - **One try per slide.** The student picks or types an answer and presses **Submit**; the slide then locks with ✓ or ✗. Next unlocks once the slide is answered, and slides can't be skipped.
 - **Points:** 10 for a right answer, 5 if the slide's hint was used, 0 if wrong. 24 slides, 240 points.
 - **A timer on every slide:** 2 min for a write slide, 1 min for a fill-in-the-blank, 65 s for an MCQ (at most 29 min 35 s for all 24). When it runs out, whatever the student has selected or typed is submitted (with nothing selected, the slide counts as wrong). After every submit, whether the student clicked Submit or time ran out, the result shows for 3 seconds and then the deck moves to the next slide by itself. The deadline is set when the slide first opens, so going back or reloading doesn't reset it. Change the times in `TIME` at the top of `js/app.js`.
 - **No solutions until the end.** While the exam is in progress, a wrong answer only says it's wrong. Once all 24 slides are answered, the results slide shows:
   - the score
   - a breakdown by question type and by part of the day
-  - the class leaderboard: top 10 by first name, plus the student's own rank and the class average
-  - every solution: the student's answer, the right answer, why theirs was wrong, and what the query does
+  - with score tracking on, the class leaderboard: top 10 by first name, plus the student's own rank
+  - every solution: the full question, the student's answer and why it was wrong, the solution with its real output, why the right option is right, and what the query does
 
   Going back to a slide then shows its solution too.
-- **One attempt.** There's no restart, and the score sheet keeps each student's first answer per slide, so the exam can't be retaken after seeing the solutions.
-- The answers are hidden on screen, but they're in the page's code. A student who knows the browser's developer tools could find them. Fine for a lab exam; for anything higher-stakes, marking would have to move to the server.
+- **Play again.** With score tracking off, the results slide has a **Play again** button that clears your answers on this device. With score tracking on (as in the lab), there's no restart and the score sheet keeps each student's first answer per slide.
+- The answers are hidden on screen, but they're in the page's code. A student who knows the browser's developer tools could find them. That was fine for a lab exam; for anything higher-stakes, marking would have to move to the server.
 
 **Covers:**
 - **Create:** `insertOne`, `insertMany`
@@ -50,7 +60,7 @@ The engine also supports regex, `$nin`, the array update operators, positional `
 - Each slide has its own address (`#12`), so a teacher can project a slide and students can open the same one.
 - On a phone-sized screen, the app preview becomes a bottom sheet that slides up after each answer.
 - Progress is saved in the student's browser (localStorage), one copy per signed-in student, so a shared lab computer keeps students apart.
-- Score tracking is optional (see below). Without it, nothing is collected.
+- Score tracking is optional (see below) and off on the live site, so nothing is collected.
 
 ## Put it on GitHub Pages
 
@@ -67,7 +77,7 @@ The engine also supports regex, `$nin`, the array update operators, positional `
 
 ## Score tracking (optional)
 
-Students sign in with their **university Google account**, and each one's score lands in a Google Sheet you own. Only `@nst.rishihood.edu.in` (students) and `@rishihood.edu.in` (staff) accounts can sign in; personal Gmail and any other domain are refused. Staff who sign in to test get a row in the sheet too.
+Off on the live site. When it's on, students sign in with their **university Google account**, and each one's score lands in a Google Sheet you own. In the lab, only `@nst.rishihood.edu.in` (students) and `@rishihood.edu.in` (staff) accounts could sign in; personal Gmail and any other domain are refused. Staff who sign in to test get a row in the sheet too.
 
 **What you get in the sheet**
 - **Scores:** one row per student: score (out of 240), right, wrong, hints used, slides answered, the slide they're on, finished or not, first seen, last update and when they finished. Then **Tab switches**, **Time away (s)**, and **Answers**, where the script keeps each answer.
@@ -96,7 +106,7 @@ If your sheet has a **Scores** tab from an earlier version, the script renames i
    - **APIs & Services → Credentials → Create credentials → OAuth client ID → Web application.** Under **Authorized JavaScript origins**, add `https://<your-username>.github.io`. No redirect URIs are needed. Copy the client ID.
 3. **Fill in the script's settings** at the top of `Code.gs`: `CLIENT_ID` (from step 2). `ALLOWED_DOMAINS` is already set to the two Rishihood domains. Save.
 4. **Deploy the script.** **Deploy → New deployment → Web app**, with **Execute as: Me** and **Who has access: Anyone**. Authorize it, then copy the **Web app URL** (ends in `/exec`). "Anyone" is needed because the site calls the script without Google cookies; the script itself only accepts verified sign-ins from your domain.
-5. **Fill in [`js/config.js`](js/config.js):** `googleClientId` and `scriptUrl` (`allowedDomains` is already set). Commit and push.
+5. **Fill in [`js/config.js`](js/config.js):** `googleClientId`, `scriptUrl`, `allowedDomains` (for example `["nst.rishihood.edu.in", "rishihood.edu.in"]`) and `requireSignIn: true`. Commit and push.
 6. **Test it:** open the site, sign in, answer one slide, and check that a row appears in **Scores**.
 
 When you change `Code.gs` later, use **Deploy → Manage deployments → Edit → New version**, so the URL stays the same.

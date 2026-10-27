@@ -176,13 +176,13 @@
       <li><b>One try per slide.</b> Pick or type your answer, then press <b>Submit</b>. It locks after that.</li>
       <li><b>${POINTS} points</b> for each right answer, <b>${POINTS - HINT_COST}</b> if you used the hint, <b>0</b> if it's wrong. ${N} slides, ${MAX} points.</li>
       <li><b>Every slide has a timer:</b> ${TIME.write} s to write a query, ${TIME.pick} s to fill in a blank, ${TIME.choice} s for a multiple-choice question. When it runs out, whatever you've picked or typed is submitted (if nothing, the slide counts as wrong) and you move on to the next slide. Leaving the slide or reloading doesn't stop it.</li>
-      <li><b>Solutions come at the end.</b> You'll see every answer, why it's right, and where you stand on the class leaderboard once all ${N} slides are answered.</li>
+      <li><b>Solutions come at the end.</b> You'll see every answer and why it's right${Score.enabled ? ", and where you stand on the class leaderboard," : ""} once all ${N} slides are answered.</li>
     </ul></div>`;
 
   function renderIntro() {
     const counts = {};
     steps.forEach((st) => (counts[st.mode] = (counts[st.mode] || 0) + 1));
-    $("slide").innerHTML = `<div class="eyebrow">MongoDB exam · Lectures 2 and 3</div>
+    $("slide").innerHTML = `<div class="eyebrow">${Score.enabled ? "MongoDB exam · Lectures 2 and 3" : "MongoDB in one day · CRUD and operators"}</div>
       <h2 class="slide-title">${esc(STORY.title)}</h2>
       <p class="lead">${STORY.intro}</p>
       ${rulesHTML()}
@@ -434,6 +434,7 @@
   }
   function leaderboardHTML() {
     if (!Score.enabled) return "";
+    if (!Score.enabled) return "";
     if (!Score.user) return `<h3 class="res-h">Leaderboard</h3><p class="muted">Sign in with your university account to appear on the class leaderboard.</p>`;
     if (!board) return `<h3 class="res-h">Leaderboard</h3><p class="muted">${Score.status === "offline" || Score.status === "expired" ? esc(Score.detail) : "Loading the class leaderboard…"}</p>`;
     const ord = (n) => n + (["th", "st", "nd", "rd"][(n % 100 - 20) % 10] || ["th", "st", "nd", "rd"][n % 100] || "th");
@@ -453,7 +454,7 @@
       const open = steps.map((s, i) => (answer(i) ? -1 : i + 1)).filter((n) => n > 0);
       $("slide").innerHTML = `<div class="eyebrow">Almost there</div>
         <h2 class="slide-title">${open.length} slide${open.length > 1 ? "s" : ""} left</h2>
-        <p class="lead">Answer every slide to see your score, the solutions and the leaderboard. Still open: ${open.join(", ")}.</p>
+        <p class="lead">Answer every slide to see your score and the solutions${Score.enabled ? " and the leaderboard" : ""}. Still open: ${open.join(", ")}.</p>
         <div class="actions"><button class="btn primary" id="goto">Go to slide ${open[0]} →</button></div>`;
       $("goto").onclick = () => go(open[0]);
       return;
@@ -467,7 +468,14 @@
       ${breakdownHTML()}
       <h3 class="res-h">Solutions</h3>
       <div class="sol-tools"><label class="only-wrong"><input type="checkbox" id="only-wrong"> Show only the ones I got wrong</label><button class="btn" id="open-all" type="button">Open all</button></div>
-      <div class="sols" id="sols">${steps.map((s, i) => solutionHTML(i, false, true)).join("")}</div>`;
+      <div class="sols" id="sols">${steps.map((s, i) => solutionHTML(i, false, true)).join("")}</div>
+      ${Score.enabled ? "" : '<div class="actions"><button class="btn primary" id="again" type="button">Play again ↺</button></div>'}`;
+    // without a score sheet there's nothing to protect, so anyone can replay the day
+    if (!Score.enabled) $("again").onclick = () => {
+      if (!confirm("Start the day again? Your answers and score here will be cleared.")) return;
+      progress = fresh(); save(); ui = {};
+      go(0);
+    };
     $("only-wrong").onchange = (e) => $("sols").classList.toggle("only-wrong", e.target.checked);
     $("open-all").onclick = () => {
       const all = [...document.querySelectorAll("#sols .sol")], open = !all.every((d) => d.open);
